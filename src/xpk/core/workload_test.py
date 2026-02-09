@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from xpk.core.workload import get_jobsets_list_gcp_link
+from unittest.mock import MagicMock, patch
+from xpk.core.workload import get_jobsets_list_gcp_link, get_workload_list
 
 
 def test_get_jobsets_list_gcp_link():
@@ -26,3 +27,22 @@ def test_get_jobsets_list_gcp_link():
       result
       == 'https://console.cloud.google.com/kubernetes/aiml/deployments/jobs?project=test-project'
   )
+
+
+@patch('xpk.core.workload.run_command_for_value')
+def test_get_workload_list(mock_run_command):
+  # Setup
+  mock_run_command.return_value = (0, 'Jobset Name...')
+  args = MagicMock()
+  args.filter_by_status = 'EVERYTHING'
+  args.filter_by_job = None
+
+  # Execute
+  get_workload_list(args)
+
+  # Verify
+  call_args = mock_run_command.call_args
+  command = call_args[0][0]
+
+  # Assert
+  assert 'Priority:.spec.podSets[0].template.spec.priorityClassName' in command

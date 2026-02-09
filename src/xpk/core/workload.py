@@ -108,7 +108,7 @@ def get_workload_list(args) -> tuple[int, str]:
   columns = {
       'Jobset Name': '.metadata.ownerReferences[0].name',
       'Created Time': '.metadata.creationTimestamp',
-      'Priority': '.spec.priorityClassName',
+      'Priority': '.spec.podSets[0].template.spec.priorityClassName',
       'TPU VMs Needed': '.spec.podSets[0].count',
       'TPU VMs Running/Ran': '.status.admission.podSetAssignments[-1].count',
       'TPU VMs Done': '.status.reclaimablePods[0].count',
