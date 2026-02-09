@@ -14,12 +14,68 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from dataclasses import dataclass
 import re
+from typing import Callable
+
 from ..utils.console import xpk_exit, xpk_print
 from .commands import run_command_for_value
 from .gcloud_context import get_cluster_location
 
 WORKLOAD_LIST_DELIMITER = '~'
+
+
+@dataclass
+class WorkloadListColumn:
+  header: str
+  jsonpath: str
+  formatter: Callable[[str], str] = lambda x: x
+
+
+def sum_counts(value: str) -> str:
+  """Sums space-separated numbers in a string."""
+  if not value:
+    return '0'
+  try:
+    total = sum(int(x) for x in value.split())
+    return str(total)
+  except ValueError:
+    return '0'
+
+
+def sum_counts_and_hide_zero(value: str) -> str:
+  """Sums counts and returns '<none>' if the total is 0."""
+  val_str = sum_counts(value)
+  if val_str == '0':
+    return '<none>'
+  return val_str
+
+
+WORKLOAD_LIST_COLUMNS = [
+    WorkloadListColumn('Jobset Name', '{.metadata.ownerReferences[0].name}'),
+    WorkloadListColumn('Created Time', '{.metadata.creationTimestamp}'),
+    WorkloadListColumn(
+        'Priority', '{.spec.podSets[0].template.spec.priorityClassName}'
+    ),
+    WorkloadListColumn(
+        'TPU VMs Needed', '{.spec.podSets[*].count}', sum_counts
+    ),
+    WorkloadListColumn(
+        'TPU VMs Running/Ran',
+        '{.status.admission.podSetAssignments[*].count}',
+        sum_counts_and_hide_zero,
+    ),
+    WorkloadListColumn(
+        'TPU VMs Done',
+        '{.status.reclaimablePods[*].count}',
+        sum_counts_and_hide_zero,
+    ),
+    WorkloadListColumn('Status', '{.status.conditions[-1].type}'),
+    WorkloadListColumn('Status Message', '{.status.conditions[-1].message}'),
+    WorkloadListColumn(
+        'Status Time', '{.status.conditions[-1].lastTransitionTime}'
+    ),
+]
 
 
 def parse_and_format_workload_list(
@@ -35,61 +91,41 @@ def parse_and_format_workload_list(
   Returns:
     The formatted table string.
   """
-  headers = [
-      'Jobset Name',
-      'Created Time',
-      'Priority',
-      'TPU VMs Needed',
-      'TPU VMs Running/Ran',
-      'TPU VMs Done',
-      'Status',
-      'Status Message',
-      'Status Time',
-  ]
   rows = []
   if raw_output:
     for line in raw_output.splitlines():
       parts = line.split(WORKLOAD_LIST_DELIMITER)
-      if len(parts) != len(headers):
+      if len(parts) != len(WORKLOAD_LIST_COLUMNS):
         # Skip malformed lines or handle error
         continue
 
-      # Sum up count fields (indices 3, 4, 5)
-      def sum_counts(field_val):
-        if not field_val:
-          return 0
-        try:
-          return sum(int(x) for x in field_val.split())
-        except ValueError:
-          return 0
-
-      # Create a mutable list for the row
-      row = list(parts)
-
-      # Process counts
-      needed = sum_counts(parts[3])
-      running = sum_counts(parts[4])
-      done = sum_counts(parts[5])
-
-      row[3] = str(needed)
-      row[4] = str(running) if running > 0 else '<none>'
-      row[5] = str(done) if done > 0 else '<none>'
+      # Map parsed values to headers using the configuration
+      row_data = {}
+      raw_row_data = {}  # Keep raw data if needed for special logic
+      for i, col in enumerate(WORKLOAD_LIST_COLUMNS):
+        raw_val = parts[i]
+        formatted_val = col.formatter(raw_val)
+        row_data[col.header] = formatted_val
+        raw_row_data[col.header] = raw_val
 
       # Filter Logic
-      status = row[6]
-      message = row[7]
+      status = row_data['Status']
+      message = row_data['Status Message']
+      running_str = row_data['TPU VMs Running/Ran']
 
       include = False
       if filter_by_status == 'EVERYTHING':
         include = True
       elif filter_by_status == 'RUNNING':
         # Status ~ "Admitted|Evicted" && Running > 0
-        if status in ['Admitted', 'Evicted'] and running > 0:
+        if status in ['Admitted', 'Evicted'] and running_str != '<none>':
           include = True
       elif filter_by_status == 'QUEUED':
         # Status ~ "Admitted|Evicted|QuotaReserved" && Running == 0
-        # (Original logic checked for <none> or 0)
-        if status in ['Admitted', 'Evicted', 'QuotaReserved'] and running == 0:
+        if (
+            status in ['Admitted', 'Evicted', 'QuotaReserved']
+            and running_str == '<none>'
+        ):
           include = True
       elif filter_by_status == 'FINISHED':
         if status == 'Finished':
@@ -104,15 +140,19 @@ def parse_and_format_workload_list(
         raise RuntimeError(f'Can not find filter type: {filter_by_status}')
 
       if include and filter_by_job:
-        if filter_by_job not in row[0]:
+        if filter_by_job not in row_data['Jobset Name']:
           include = False
 
       if include:
-        rows.append(row)
+        # Construct row list in order
+        row_list = [row_data[col.header] for col in WORKLOAD_LIST_COLUMNS]
+        rows.append(row_list)
 
   # Formatting
   if not rows:
     return ''
+
+  headers = [col.header for col in WORKLOAD_LIST_COLUMNS]
 
   # Calculate column widths
   col_widths = [len(h) for h in headers]
@@ -140,26 +180,8 @@ def get_workload_list(args) -> tuple[int, str]:
     return_code: 0 if successful and 1 otherwise.
     return_value: workloads in the cluster matching the criteria.
   """
-  # Define JSONPath with delimiter
-  jsonpath_parts = [
-      '{.metadata.ownerReferences[0].name}',
-      '{.metadata.creationTimestamp}',
-      '{.spec.podSets[0].template.spec.priorityClassName}',
-      '{.spec.podSets[*].count}',
-      '{.status.admission.podSetAssignments[*].count}',
-      '{.status.reclaimablePods[*].count}',
-      '{.status.conditions[-1].type}',
-      '{.status.conditions[-1].message}',
-      '{.status.conditions[-1].lastTransitionTime}',
-  ]
-  # Use range to iterate over items and print delimiter-separated values
-  # {range .items[*]}part1~part2~...partN{"\n"}{end}
-
-  # Note: Status Message might contain newlines, which could break parsing.
-  # However, kubectl jsonpath output is raw. We rely on the delimiter.
-  # If a message contains the delimiter, we are in trouble.
-  # But ~ is rare in k8s messages.
-
+  # Construct JSONPath string from configuration
+  jsonpath_parts = [col.jsonpath for col in WORKLOAD_LIST_COLUMNS]
   delimiter = WORKLOAD_LIST_DELIMITER
   jsonpath_str = (
       f'{{range .items[*]}}{delimiter.join(jsonpath_parts)}{{"\n"}}{{end}}'
