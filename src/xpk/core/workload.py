@@ -33,22 +33,14 @@ class WorkloadListColumn:
 
 
 def sum_counts(value: str) -> str:
-  """Sums space-separated numbers in a string."""
-  if not value:
-    return '0'
+  """Sums space-separated numbers in a string. Returns <none> if empty."""
+  if not value or not value.strip():
+    return '<none>'
   try:
     total = sum(int(x) for x in value.split())
     return str(total)
   except ValueError:
-    return '0'
-
-
-def sum_counts_and_hide_zero(value: str) -> str:
-  """Sums counts and returns '<none>' if the total is 0."""
-  val_str = sum_counts(value)
-  if val_str == '0':
     return '<none>'
-  return val_str
 
 
 WORKLOAD_LIST_COLUMNS = [
@@ -63,12 +55,12 @@ WORKLOAD_LIST_COLUMNS = [
     WorkloadListColumn(
         'TPU VMs Running/Ran',
         '{.status.admission.podSetAssignments[*].count}',
-        sum_counts_and_hide_zero,
+        sum_counts,
     ),
     WorkloadListColumn(
         'TPU VMs Done',
         '{.status.reclaimablePods[*].count}',
-        sum_counts_and_hide_zero,
+        sum_counts,
     ),
     WorkloadListColumn('Status', '{.status.conditions[-1].type}'),
     WorkloadListColumn('Status Message', '{.status.conditions[-1].message}'),
@@ -101,32 +93,35 @@ def parse_and_format_workload_list(
 
       # Map parsed values to headers using the configuration
       row_data = {}
-      raw_row_data = {}  # Keep raw data if needed for special logic
       for i, col in enumerate(WORKLOAD_LIST_COLUMNS):
         raw_val = parts[i]
         formatted_val = col.formatter(raw_val)
         row_data[col.header] = formatted_val
-        raw_row_data[col.header] = raw_val
 
       # Filter Logic
       status = row_data['Status']
       message = row_data['Status Message']
       running_str = row_data['TPU VMs Running/Ran']
 
+      def safe_int(s):
+        try:
+          return int(s)
+        except ValueError:
+          return 0
+
       include = False
       if filter_by_status == 'EVERYTHING':
         include = True
       elif filter_by_status == 'RUNNING':
         # Status ~ "Admitted|Evicted" && Running > 0
-        if status in ['Admitted', 'Evicted'] and running_str != '<none>':
-          include = True
+        if status in ['Admitted', 'Evicted']:
+          if running_str != '<none>' and safe_int(running_str) > 0:
+            include = True
       elif filter_by_status == 'QUEUED':
-        # Status ~ "Admitted|Evicted|QuotaReserved" && Running == 0
-        if (
-            status in ['Admitted', 'Evicted', 'QuotaReserved']
-            and running_str == '<none>'
-        ):
-          include = True
+        # Status ~ "Admitted|Evicted|QuotaReserved" && (Running == <none> || Running == 0)
+        if status in ['Admitted', 'Evicted', 'QuotaReserved']:
+          if running_str == '<none>' or safe_int(running_str) == 0:
+            include = True
       elif filter_by_status == 'FINISHED':
         if status == 'Finished':
           include = True

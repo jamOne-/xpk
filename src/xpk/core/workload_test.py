@@ -56,7 +56,7 @@ def test_get_workload_list_super_slicing(mock_run_command):
   mock_output = (
       'job-super~2024-01-01T00:00:00Z~high~32 32~32 32~0 0~Running~All'
       ' good~2024-01-01T00:01:00Z\njob-normal~2024-01-02T00:00:00Z~low~4~4~0~Running~All'
-      ' good~2024-01-02T00:01:00Z'
+      ' good~2024-01-02T00:01:00Z\njob-pending~2024-01-03T00:00:00Z~high~16~~0~Admitted~Waiting~2024-01-03T00:01:00Z'
   )
   mock_run_command.return_value = (0, mock_output)
   args = MagicMock()
@@ -75,3 +75,5 @@ def test_get_workload_list_super_slicing(mock_run_command):
   assert '0' in return_value  # 0 + 0 Done
   assert 'job-normal' in return_value
   assert '4' in return_value
+  assert 'job-pending' in return_value
+  assert '<none>' in return_value  # Running for job-pending
