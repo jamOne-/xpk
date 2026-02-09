@@ -45,4 +45,33 @@ def test_get_workload_list(mock_run_command):
   command = call_args[0][0]
 
   # Assert
-  assert 'Priority:.spec.podSets[0].template.spec.priorityClassName' in command
+  assert 'jsonpath=' in command
+  assert '{.spec.podSets[*].count}' in command
+
+
+@patch('xpk.core.workload.run_command_for_value')
+def test_get_workload_list_super_slicing(mock_run_command):
+  # Setup
+  # Mock output with super-slicing (multiple counts) and normal workload
+  mock_output = (
+      'job-super~2024-01-01T00:00:00Z~high~32 32~32 32~0 0~Running~All'
+      ' good~2024-01-01T00:01:00Z\njob-normal~2024-01-02T00:00:00Z~low~4~4~0~Running~All'
+      ' good~2024-01-02T00:01:00Z'
+  )
+  mock_run_command.return_value = (0, mock_output)
+  args = MagicMock()
+  args.filter_by_status = 'EVERYTHING'
+  args.filter_by_job = None
+
+  # Execute
+  return_code, return_value = get_workload_list(args)
+
+  # Verify
+  assert return_code == 0
+  # Check for summed values
+  assert 'job-super' in return_value
+  assert '64' in return_value  # 32 + 32 Needed
+  assert '64' in return_value  # 32 + 32 Running
+  assert '0' in return_value  # 0 + 0 Done
+  assert 'job-normal' in return_value
+  assert '4' in return_value

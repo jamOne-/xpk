@@ -19,80 +19,115 @@ from ..utils.console import xpk_exit, xpk_print
 from .commands import run_command_for_value
 from .gcloud_context import get_cluster_location
 
-
-def workload_list_awk_command(filter_key) -> str:
-  """Function returns the awk command needed from the filter specified.
-
-  Args:
-    filter_key: workload list filter to awk against
-
-  Returns:
-    awk command to use in filtering workload list.
-  """
-
-  return f" | awk -e 'NR == 1 || {filter_key} {{print $0}}'"
+WORKLOAD_LIST_DELIMITER = '~'
 
 
-def determine_workload_list_filter_by_status(args) -> str:
-  """Function to create the filtered view of workload list.
+def parse_and_format_workload_list(
+    raw_output: str, filter_by_status: str, filter_by_job: str
+) -> str:
+  """Parses, filters, and formats the raw workload list output.
 
   Args:
-    args: user provided arguments for running the command.
+    raw_output: The raw output from kubectl.
+    filter_by_status: The status filter to apply.
+    filter_by_job: The job name filter to apply.
 
   Returns:
-    the argument needed to filter by status of jobs in workload list.
+    The formatted table string.
   """
+  headers = [
+      'Jobset Name',
+      'Created Time',
+      'Priority',
+      'TPU VMs Needed',
+      'TPU VMs Running/Ran',
+      'TPU VMs Done',
+      'Status',
+      'Status Message',
+      'Status Time',
+  ]
+  rows = []
+  if raw_output:
+    for line in raw_output.splitlines():
+      parts = line.split(WORKLOAD_LIST_DELIMITER)
+      if len(parts) != len(headers):
+        # Skip malformed lines or handle error
+        continue
 
-  # Argument positions related to columns created by workload list command.
-  status_arg = '$7'
-  running_vms_arg = '$5'
-  status_verbose_arg = '$9'
-  if args.filter_by_status == 'EVERYTHING':
+      # Sum up count fields (indices 3, 4, 5)
+      def sum_counts(field_val):
+        if not field_val:
+          return 0
+        try:
+          return sum(int(x) for x in field_val.split())
+        except ValueError:
+          return 0
+
+      # Create a mutable list for the row
+      row = list(parts)
+
+      # Process counts
+      needed = sum_counts(parts[3])
+      running = sum_counts(parts[4])
+      done = sum_counts(parts[5])
+
+      row[3] = str(needed)
+      row[4] = str(running) if running > 0 else '<none>'
+      row[5] = str(done) if done > 0 else '<none>'
+
+      # Filter Logic
+      status = row[6]
+      message = row[7]
+
+      include = False
+      if filter_by_status == 'EVERYTHING':
+        include = True
+      elif filter_by_status == 'RUNNING':
+        # Status ~ "Admitted|Evicted" && Running > 0
+        if status in ['Admitted', 'Evicted'] and running > 0:
+          include = True
+      elif filter_by_status == 'QUEUED':
+        # Status ~ "Admitted|Evicted|QuotaReserved" && Running == 0
+        # (Original logic checked for <none> or 0)
+        if status in ['Admitted', 'Evicted', 'QuotaReserved'] and running == 0:
+          include = True
+      elif filter_by_status == 'FINISHED':
+        if status == 'Finished':
+          include = True
+      elif filter_by_status == 'FAILED':
+        if status == 'Finished' and 'failed' in message:
+          include = True
+      elif filter_by_status == 'SUCCESSFUL':
+        if status == 'Finished' and 'finished' in message:
+          include = True
+      else:
+        raise RuntimeError(f'Can not find filter type: {filter_by_status}')
+
+      if include and filter_by_job:
+        if filter_by_job not in row[0]:
+          include = False
+
+      if include:
+        rows.append(row)
+
+  # Formatting
+  if not rows:
     return ''
-  elif args.filter_by_status == 'RUNNING':
-    # Running includes the status Admitted or Evicted, and when the number of
-    # vms running is > 0.
-    return workload_list_awk_command(
-        f'({status_arg} ~ "Admitted|Evicted" && {running_vms_arg} ~ /^[0-9]+$/'
-        f' && {running_vms_arg} > 0)'
-    )
-  elif args.filter_by_status == 'QUEUED':
-    # Queued includes the status Admitted or Evicted, and when the number of
-    # vms running is 0.
-    return workload_list_awk_command(
-        f'({status_arg} ~ "Admitted|Evicted|QuotaReserved" &&'
-        f' ({running_vms_arg} ~ "<none>" || {running_vms_arg} == 0))'
-    )
-  elif args.filter_by_status == 'FINISHED':
-    return workload_list_awk_command(f'{status_arg} == "Finished"')
-  elif args.filter_by_status == 'FAILED':
-    # Failed includes the status Finished, and when the verbose reason is failed.
-    return workload_list_awk_command(
-        f'({status_arg} == "Finished" && {status_verbose_arg} ~ "failed")'
-    )
-  elif args.filter_by_status == 'SUCCESSFUL':
-    # Failed includes the status Finished, and when the verbose reason is finished/success.
-    return workload_list_awk_command(
-        f'({status_arg} == "Finished" && {status_verbose_arg} ~ "finished")'
-    )
-  raise RuntimeError(f'Can not find filter type: {args.filter_by_status}')
 
+  # Calculate column widths
+  col_widths = [len(h) for h in headers]
+  for row in rows:
+    for i, val in enumerate(row):
+      col_widths[i] = max(col_widths[i], len(val))
 
-def determine_workload_list_filter_by_job(args) -> str:
-  """Function to filter view of workload list based on job name.
+  # Create format string
+  fmt = '   '.join(f'{{:<{w}}}' for w in col_widths)
 
-  Args:
-    args: user provided arguments for running the command.
+  output = [fmt.format(*headers)]
+  for row in rows:
+    output.append(fmt.format(*row))
 
-  Returns:
-    the argument needed to filter job names from workload list
-  """
-  # Argument positions related to columns created by workload list command.
-  if not hasattr(args, 'filter_by_job') or args.filter_by_job is None:
-    return ''
-  else:
-    job_name_arg = '$1'
-    return workload_list_awk_command(f'{job_name_arg} ~ "{args.filter_by_job}"')
+  return '\n'.join(output)
 
 
 def get_workload_list(args) -> tuple[int, str]:
@@ -105,34 +140,52 @@ def get_workload_list(args) -> tuple[int, str]:
     return_code: 0 if successful and 1 otherwise.
     return_value: workloads in the cluster matching the criteria.
   """
-  columns = {
-      'Jobset Name': '.metadata.ownerReferences[0].name',
-      'Created Time': '.metadata.creationTimestamp',
-      'Priority': '.spec.podSets[0].template.spec.priorityClassName',
-      'TPU VMs Needed': '.spec.podSets[0].count',
-      'TPU VMs Running/Ran': '.status.admission.podSetAssignments[-1].count',
-      'TPU VMs Done': '.status.reclaimablePods[0].count',
-      'Status': '.status.conditions[-1].type',
-      'Status Message': '.status.conditions[-1].message',
-      'Status Time': '.status.conditions[-1].lastTransitionTime',
-  }
-  s = ','.join([key + ':' + value for key, value in columns.items()])
+  # Define JSONPath with delimiter
+  jsonpath_parts = [
+      '{.metadata.ownerReferences[0].name}',
+      '{.metadata.creationTimestamp}',
+      '{.spec.podSets[0].template.spec.priorityClassName}',
+      '{.spec.podSets[*].count}',
+      '{.status.admission.podSetAssignments[*].count}',
+      '{.status.reclaimablePods[*].count}',
+      '{.status.conditions[-1].type}',
+      '{.status.conditions[-1].message}',
+      '{.status.conditions[-1].lastTransitionTime}',
+  ]
+  # Use range to iterate over items and print delimiter-separated values
+  # {range .items[*]}part1~part2~...partN{"\n"}{end}
 
-  workload_list_filter_status_cmd = determine_workload_list_filter_by_status(
-      args
+  # Note: Status Message might contain newlines, which could break parsing.
+  # However, kubectl jsonpath output is raw. We rely on the delimiter.
+  # If a message contains the delimiter, we are in trouble.
+  # But ~ is rare in k8s messages.
+
+  delimiter = WORKLOAD_LIST_DELIMITER
+  jsonpath_str = (
+      f'{{range .items[*]}}{delimiter.join(jsonpath_parts)}{{"\n"}}{{end}}'
   )
-  workload_list_filter_job_cmd = determine_workload_list_filter_by_job(args)
+
+  # Escape newline for shell
+  jsonpath_str = jsonpath_str.replace('\n', '\\n')
+
   command = (
-      f'kubectl get workloads --ignore-not-found -o=custom-columns="{s}" '
-      f'{workload_list_filter_status_cmd} {workload_list_filter_job_cmd}'
+      f"kubectl get workloads --ignore-not-found -o=jsonpath='{jsonpath_str}'"
   )
 
   task = f'List Jobs with filter-by-status={args.filter_by_status}'
-  if hasattr(args, 'filter_by_job'):
+  if hasattr(args, 'filter_by_job') and args.filter_by_job:
     task += f' with filter-by-job={args.filter_by_job}'
 
   return_code, return_value = run_command_for_value(command, task)
-  return return_code, return_value
+
+  if return_code != 0:
+    return return_code, return_value
+
+  formatted_output = parse_and_format_workload_list(
+      return_value, args.filter_by_status, getattr(args, 'filter_by_job', None)
+  )
+
+  return 0, formatted_output
 
 
 def check_if_workload_exists(args) -> bool:
