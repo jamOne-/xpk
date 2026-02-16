@@ -30,6 +30,7 @@ from .commands import (
 from .gcloud_context import (
     add_zone_and_project,
     get_cluster_location,
+    get_project_number,
     zone_to_region,
     project_id_to_project_number,
 )
@@ -391,13 +392,7 @@ def get_all_clusters_programmatic(args) -> tuple[list[str], int]:
 def setup_k8s_env(args) -> k8s_client.ApiClient:
   add_zone_and_project(args)
   get_cluster_credentials(args)
-  # Use provided project number if available, otherwise fetch via API
-  if getattr(args, 'project_number', None):
-    xpk_print(f'Using provided project number: {args.project_number}')
-  elif args.dry_run:
-    args.project_number = abs(hash(args.project) % (10**12))  # 12 digit hash
-  else:
-    args.project_number = project_id_to_project_number(args.project)
+  args.project_number = get_project_number(args)
 
   config.load_kube_config()
   return k8s_client.ApiClient()

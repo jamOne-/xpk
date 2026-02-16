@@ -17,14 +17,18 @@ limitations under the License.
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
+
+from google.api_core.exceptions import PermissionDenied
+from google.cloud import resourcemanager_v3
 
 from google.api_core.exceptions import PermissionDenied
 from google.cloud import resourcemanager_v3
 
 from ..utils.console import xpk_print, xpk_exit
 from ..utils.versions import ReleaseChannel
+from ..utils.execution_context import is_dry_run
 from .commands import run_command_for_value
-from functools import lru_cache
 
 
 def get_project():
@@ -231,6 +235,10 @@ def get_gke_control_plane_version(
 
 @lru_cache()
 def project_id_to_project_number(project_id: str) -> str:
+  if is_dry_run():
+    # 12 digit hash
+    return str(abs(hash(project_id) % (10**12)))
+
   client = resourcemanager_v3.ProjectsClient()
   request = resourcemanager_v3.GetProjectRequest()
   request.name = f'projects/{project_id}'
@@ -245,3 +253,19 @@ def project_id_to_project_number(project_id: str) -> str:
   parts = response.name.split('/', 1)
   xpk_print(f'Project number for project: {project_id} is {parts[1]}')
   return str(parts[1])
+
+
+def get_project_number(args) -> str:
+  """Get project number from args or fetch it.
+
+  Args:
+    args: user provided arguments.
+
+  Returns:
+    Project number as string.
+  """
+  if getattr(args, 'project_number', None):
+    xpk_print(f'Using provided project number: {args.project_number}')
+    return str(args.project_number)
+  else:
+    return project_id_to_project_number(args.project)
