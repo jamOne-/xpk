@@ -284,7 +284,7 @@ def _assess_available_slices_for_reservation(
     # reservation instanceof ReservationLink (not Block/SubBlock):
     blocks, return_code = _get_blocks_in_reservation(reservation)
     if return_code != 0:
-      return [], 0
+      return [], return_code
     if blocks:
       return assess_available_slices(
           blocks,
@@ -296,12 +296,16 @@ def _assess_available_slices_for_reservation(
 
     return [], 0
 
-  count, return_code = _get_reservation_count(
+  slices_count, return_code = _get_reservation_slices_count(
       reservation, required_hosts, system
   )
   if return_code != 0:
     return [], return_code
-  return ([ReservationCapacity(reservation, count)] if count > 0 else []), 0
+  return (
+      [ReservationCapacity(reservation, slices_count)]
+      if slices_count > 0
+      else []
+  ), 0
 
 
 def _list_healthy_sub_blocks(
@@ -315,14 +319,14 @@ def _list_healthy_sub_blocks(
   Returns:
     A tuple containing a list of healthy sub-blocks and the return code.
   """
-  filter_arg = 'healthInfo.healthStatus=HEALTHY'
-  task_name = f'Count healthy fitting sub-blocks in {reservation.block_name}'
-  dry_run_return_val = _get_dry_run_sub_blocks()
-
   if isinstance(reservation, SubBlockReservationLink):
-    filter_arg = f'name={reservation.sub_block_name} AND {filter_arg}'
+    filter_arg = (
+        f'name={reservation.sub_block_name} AND healthInfo.healthStatus=HEALTHY'
+    )
     task_name = f'Check sub-block {reservation.sub_block_name} health'
-    dry_run_return_val = '[{"name": "sub0", "count": 16, "inUseCount": 0}]'
+  else:
+    filter_arg = 'healthInfo.healthStatus=HEALTHY'
+    task_name = f'Count healthy fitting sub-blocks in {reservation.block_name}'
 
   command = (
       f'gcloud beta compute reservations sub-blocks list {reservation.name} '
@@ -336,7 +340,7 @@ def _list_healthy_sub_blocks(
   return_code, output = run_command_for_value(
       command,
       task_name,
-      dry_run_return_val=dry_run_return_val,
+      dry_run_return_val=_get_dry_run_sub_blocks(),
   )
 
   if return_code != 0 or not output.strip():
@@ -374,7 +378,7 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
     reservation: BlockReservationLink,
     required_hosts: int,
 ) -> tuple[list[ReservationCapacity], int]:
-  """Get healthy and fitting sub-blocks in a block."""
+  """Get healthy and fitting sub-block capacities in a block."""
   sub_blocks, return_code = _list_healthy_sub_blocks(reservation)
 
   if return_code != 0:
@@ -388,7 +392,11 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
       )
       for sub_block in sub_blocks
   ]
-  return available_capacities, 0
+  return [
+      capacity
+      for capacity in available_capacities
+      if capacity.available_slices > 0
+  ], 0
 
 
 def _get_blocks_in_reservation(
@@ -454,10 +462,10 @@ def _verify_reservation_configuration(
   Returns:
     True if valid, False otherwise. Prints error message on failure.
   """
-  if reservation.specific_reservation:
-    if is_dry_run() and not reservation.specific_reservation.machine_type:
+  if is_dry_run():
       return True
 
+  if reservation.specific_reservation:
     if system.accelerator_type == AcceleratorType.TPU:
       if (
           reservation.specific_reservation.machine_type
@@ -498,7 +506,7 @@ def _verify_reservation_configuration(
   return True
 
 
-def _get_reservation_count(
+def _get_reservation_slices_count(
     reservation_link: ReservationLink,
     required_hosts: int,
     system: SystemCharacteristics,
