@@ -321,8 +321,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'l4-2': SystemCharacteristics(
         topology='N/A',
@@ -335,8 +335,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'l4-4': SystemCharacteristics(
         topology='N/A',
@@ -349,8 +349,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'l4-8': SystemCharacteristics(
         topology='N/A',
@@ -363,8 +363,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     # A100-40gb-$CHIPSc
     'a100-40gb-1': SystemCharacteristics(
@@ -378,8 +378,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'a100-40gb-2': SystemCharacteristics(
         topology='N/A',
@@ -392,8 +392,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'a100-40gb-4': SystemCharacteristics(
         topology='N/A',
@@ -406,8 +406,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'a100-40gb-8': SystemCharacteristics(
         topology='N/A',
@@ -420,8 +420,8 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=False,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(requires_topology=False),
+        docker_platform=AMD_PLATFORM,
     ),
     'gb200-4': SystemCharacteristics(
         topology='1x72',
@@ -434,13 +434,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=ARM_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_RDMA_A4X,
             jobset_decorator_fn=rdma_decorator.decorate_jobset,
             gpu_direct_name='rdma',
         ),
+        docker_platform=ARM_PLATFORM,
     ),
     'gb200-4-nolssd': SystemCharacteristics(
         topology='1x72',
@@ -453,13 +453,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=ARM_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_RDMA_A4X,
             jobset_decorator_fn=rdma_decorator.decorate_jobset,
             gpu_direct_name='rdma',
         ),
+        docker_platform=ARM_PLATFORM,
     ),
     'b200-8': SystemCharacteristics(
         topology='N/A',
@@ -472,13 +472,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_RDMA,
             jobset_decorator_fn=rdma_decorator.decorate_jobset,
             gpu_direct_name='rdma',
         ),
+        docker_platform=AMD_PLATFORM,
     ),
     'h200-141gb-8': SystemCharacteristics(
         topology='N/A',
@@ -491,13 +491,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_RDMA,
             jobset_decorator_fn=rdma_decorator.decorate_jobset,
             gpu_direct_name='rdma',
         ),
+        docker_platform=AMD_PLATFORM,
     ),
     # H100-80gb-$CHIPS
     'h100-80gb-8': SystemCharacteristics(
@@ -511,13 +511,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_TCPX,
             jobset_decorator_fn=tcpx_decorator.decorate_jobset,
             gpu_direct_name='tcpx',
         ),
+        docker_platform=AMD_PLATFORM,
     ),
     # H100-mega-80gb-$CHIPS
     'h100-mega-80gb-8': SystemCharacteristics(
@@ -531,13 +531,13 @@ UserFacingNameToSystemCharacteristics = {
         supports_sub_slicing=False,
         supports_super_slicing=False,
         supports_accelerator_network_profile=True,
-        docker_platform=AMD_PLATFORM,
         gpu_config=GpuConfig(
             requires_topology=True,
             nccl_installer=INSTALLER_NCCL_TCPXO,
             jobset_decorator_fn=tcpxo_decorator.decorate_jobset,
             gpu_direct_name='tcpxo',
         ),
+        docker_platform=AMD_PLATFORM,
     ),
     # TPU system characteristics
     **get_tpu_system_characteristics_map(
