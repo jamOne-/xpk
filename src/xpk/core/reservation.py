@@ -72,6 +72,13 @@ class Reservation:
   resource_policy: str = ''
 
 
+@dataclass(frozen=True)
+class ReservationSubBlock:
+  name: str
+  count: int
+  in_use_count: int
+
+
 def _parse_specific_reservation(data: dict[str, Any]) -> SpecificReservation:
   instance_properties = data.get('instanceProperties', {})
   machine_type = instance_properties.get('machineType', '')
@@ -135,6 +142,14 @@ def _parse_reservation(name: str, data: dict[str, Any]) -> Reservation:
       aggregate_reservation=aggregate_reservation,
       deployment_type=deployment_type,
       resource_policy=resource_policy,
+  )
+
+
+def parse_reservation_sub_block(data: dict[str, Any]) -> ReservationSubBlock:
+  return ReservationSubBlock(
+      name=str(data.get('name', '')),
+      count=int(data.get('count', 0)),
+      in_use_count=int(data.get('inUseCount', '0')),
   )
 
 

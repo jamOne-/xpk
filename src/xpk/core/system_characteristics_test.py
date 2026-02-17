@@ -240,8 +240,7 @@ def test_system_characteristics_post_init_throws_for_gpu_without_config():
     )
 
 
-def test_reservation_accelerator_type_derived_correctly():
-  """Tests that reservation_accelerator_type is correctly derived."""
+def test_reservation_accelerator_type_derived_correctly_for_tpu():
   tpu_system = SystemCharacteristics(
       topology="2x2x1",
       vms_per_slice=1,
@@ -255,8 +254,13 @@ def test_reservation_accelerator_type_derived_correctly():
       supports_accelerator_network_profile=False,
       docker_platform=DockerPlatform.AMD,
   )
-  assert tpu_system.reservation_accelerator_type == "ct5p"
 
+  reservation_accelerator_type = tpu_system.reservation_accelerator_type
+
+  assert reservation_accelerator_type == "ct5p"
+
+
+def test_reservation_accelerator_type_derived_correctly_for_gpu():
   gpu_system = SystemCharacteristics(
       topology="N/A",
       vms_per_slice=1,
@@ -271,8 +275,13 @@ def test_reservation_accelerator_type_derived_correctly():
       docker_platform=DockerPlatform.AMD,
       gpu_config=GpuConfig(requires_topology=False),
   )
-  assert gpu_system.reservation_accelerator_type == "nvidia-l4"
 
+  reservation_accelerator_type = gpu_system.reservation_accelerator_type
+
+  assert reservation_accelerator_type == "nvidia-l4"
+
+
+def test_reservation_accelerator_type_derived_correctly_for_cpu():
   cpu_system = SystemCharacteristics(
       topology="N/A",
       vms_per_slice=1,
@@ -286,4 +295,7 @@ def test_reservation_accelerator_type_derived_correctly():
       supports_accelerator_network_profile=False,
       docker_platform=DockerPlatform.AMD,
   )
-  assert cpu_system.reservation_accelerator_type is None
+
+  reservation_accelerator_type = cpu_system.reservation_accelerator_type
+
+  assert reservation_accelerator_type is None

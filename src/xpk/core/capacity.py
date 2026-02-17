@@ -31,6 +31,8 @@ from .reservation import (
     BlockReservationLink,
     SubBlockReservationLink,
     Reservation,
+    ReservationSubBlock,
+    parse_reservation_sub_block,
     verify_reservations_exist,
     to_reservation_path,
     get_reservation_cached,
@@ -61,21 +63,6 @@ class CapacityType(enum.Enum):
 class ReservationCapacity:
   reservation: ReservationLink
   available_slices: int
-
-
-@dataclass(frozen=True)
-class _ReservationSubBlock:
-  name: str
-  count: int
-  in_use_count: int
-
-
-def _parse_reservation_sub_block(data: dict[str, Any]) -> _ReservationSubBlock:
-  return _ReservationSubBlock(
-      name=str(data.get('name', '')),
-      count=int(data.get('count', 0)),
-      in_use_count=int(data.get('inUseCount', '0')),
-  )
 
 
 def get_capacity_type(args) -> tuple[CapacityType, int]:
@@ -319,7 +306,7 @@ def _assess_available_slices_for_reservation(
 
 def _list_healthy_sub_blocks(
     reservation: BlockReservationLink | SubBlockReservationLink,
-) -> tuple[list[_ReservationSubBlock], int]:
+) -> tuple[list[ReservationSubBlock], int]:
   """List healthy sub-blocks for a reservation block or sub-block.
 
   Args:
@@ -359,7 +346,7 @@ def _list_healthy_sub_blocks(
     data = json.loads(output)
     if not data:
       return [], 0
-    return [_parse_reservation_sub_block(row) for row in data], 0
+    return [parse_reservation_sub_block(row) for row in data], 0
   except (ValueError, IndexError, AttributeError, json.JSONDecodeError) as e:
     xpk_print(f'Error processing sub-block data: {e}. Output: "{output}".')
     return [], 1

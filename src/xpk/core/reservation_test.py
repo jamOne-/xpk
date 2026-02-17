@@ -30,6 +30,7 @@ from .reservation import (
     SubBlockReservationLink,
     to_reservation_path,
     _parse_reservation,
+    parse_reservation_sub_block,
     SpecificReservation,
     AggregateReservation,
     AcceleratorResource,
@@ -471,3 +472,19 @@ def test_get_reservation_cached_returns_none_on_invalid_json(
 
   assert result is None
   mock_print.assert_called()
+
+
+def test_parse_reservation_sub_block():
+  data = {'name': 'sub1', 'count': 10, 'inUseCount': 2}
+  res = parse_reservation_sub_block(data)
+  assert res.name == 'sub1'
+  assert res.count == 10
+  assert res.in_use_count == 2
+
+
+def test_parse_reservation_sub_block_defaults():
+  data = {}
+  res = parse_reservation_sub_block(data)
+  assert res.name == ''
+  assert res.count == 0
+  assert res.in_use_count == 0

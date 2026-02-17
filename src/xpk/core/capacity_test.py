@@ -29,7 +29,6 @@ from .capacity import (
     BlockReservationLink,
     SubBlockReservationLink,
     ReservationCapacity,
-    _parse_reservation_sub_block,
 )
 from .reservation import (
     get_reservation_cached,
@@ -782,20 +781,7 @@ def test_assess_available_slices_deduplicates(
   ]
 
 
-def test_parse_reservation_sub_block():
-  data = {'name': 'sub1', 'count': 10, 'inUseCount': 2}
-  res = _parse_reservation_sub_block(data)
-  assert res.name == 'sub1'
-  assert res.count == 10
-  assert res.in_use_count == 2
 
-
-def test_parse_reservation_sub_block_defaults():
-  data = {}
-  res = _parse_reservation_sub_block(data)
-  assert res.name == ''
-  assert res.count == 0
-  assert res.in_use_count == 0
 
 
 def test_get_reservation_count_validates_tpu_machine_type(
