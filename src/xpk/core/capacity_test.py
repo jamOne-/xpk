@@ -376,6 +376,18 @@ def test_assess_available_slices_host_filtering_insufficient_hosts(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
+  # Mock describe
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 48, "inUseCount": 2,'
+              ' "instanceProperties": {"machineType": "test-machine"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      'gcloud beta compute reservations describe',
+  )
   # Mock a sub-block that has 14 free hosts but we need 16
   commands_tester.set_result_for_command(
       (0, '[{"count": 16, "inUseCount": 2}]'),

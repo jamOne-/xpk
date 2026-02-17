@@ -201,7 +201,7 @@ def assess_available_slices(
     force_sub_block_targeting: bool,
     required_hosts: int,
     system: SystemCharacteristics,
-    require_non_empty_capacities: bool = True,
+    validate_reservations: bool = True,
 ) -> tuple[list[ReservationCapacity], int]:
   """Assess the available slices in the reservations.
 
@@ -210,19 +210,29 @@ def assess_available_slices(
     force_sub_block_targeting: if `True`, then the passed `ReservationLink` or `BlockReservationLink` will be flattened to adequate sub-blocks.
     required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
-    require_non_empty_capacities: if `True`, prints an error if a reservation has no capacity.
+    validate_reservations: if `True`, validates the reservation exists and configuration matches.
 
   Returns:
     List of capacity reservations with available slices.
   """
   reservation_capacities = []
   for reservation in reservations:
+    if validate_reservations:
+      parent_reservation = get_reservation_cached(reservation)
+
+      if not parent_reservation:
+        xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
+        return [], 1
+
+      if not _verify_reservation_configuration(parent_reservation, system):
+        return [], 1
+
     capacities, return_code = _assess_available_slices_for_reservation(
         reservation, force_sub_block_targeting, required_hosts, system
     )
     if return_code != 0:
       return [], return_code
-    if not capacities and require_non_empty_capacities:
+    if not capacities and validate_reservations:
       xpk_print(
           f'ERROR: Reservation {reservation.name} has no available capacity.'
       )
@@ -254,15 +264,6 @@ def _assess_available_slices_for_reservation(
   Returns:
     List of available reservations (targeting sub-blocks if applicable).
   """
-  parent_reservation = get_reservation_cached(reservation)
-
-  if not parent_reservation:
-    xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
-    return [], 1
-
-  if not _verify_reservation_configuration(parent_reservation, system):
-    return [], 0
-
   if isinstance(reservation, SubBlockReservationLink):
     available_slices, return_code = _get_available_slices_in_sub_block(
         reservation, required_hosts
@@ -290,13 +291,13 @@ def _assess_available_slices_for_reservation(
           force_sub_block_targeting,
           required_hosts,
           system,
-          require_non_empty_capacities=False,
+          validate_reservations=False,
       )
 
     return [], 0
 
   count, return_code = _get_reservation_count(
-      parent_reservation, required_hosts, system
+      reservation, required_hosts, system
   )
   if return_code != 0:
     return [], return_code
@@ -498,7 +499,7 @@ def _verify_reservation_configuration(
 
 
 def _get_reservation_count(
-    reservation: Reservation,
+    reservation_link: ReservationLink,
     required_hosts: int,
     system: SystemCharacteristics,
 ) -> tuple[int, int]:
@@ -512,6 +513,10 @@ def _get_reservation_count(
   Returns:
     Number of available slots in the reservation.
   """
+  reservation = get_reservation_cached(reservation_link)
+  if not reservation:
+    return 0, 1
+
   count = 0
   in_use_count = 0
 
