@@ -824,6 +824,18 @@ def test_run_gke_node_pool_create_command_super_slicing_insufficient_capacity(
       ),
       "gcloud beta compute reservations sub-blocks list",
   )
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 100, "inUseCount": 0,'
+              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      "gcloud beta compute reservations describe",
+  )
+
   result = run_gke_node_pool_create_command(args, system, "1.2.3")
 
   assert result == 1

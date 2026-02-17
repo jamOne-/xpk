@@ -463,7 +463,7 @@ def _verify_reservation_configuration(
     True if valid, False otherwise. Prints error message on failure.
   """
   if is_dry_run():
-      return True
+    return True
 
   if reservation.specific_reservation:
     if system.accelerator_type == AcceleratorType.TPU:
