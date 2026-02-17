@@ -32,7 +32,6 @@ from .gcloud_context import (
     get_cluster_location,
     get_project_number,
     zone_to_region,
-    project_id_to_project_number,
 )
 from .nodepool import recreate_nodes_in_existing_node_pools
 from .resources import get_cluster_system_characteristics
