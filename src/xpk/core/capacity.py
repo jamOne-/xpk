@@ -259,7 +259,7 @@ def _assess_available_slices_for_reservation(
     xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
     return [], 1
 
-  if not _verify_reservation_configuration(parent_reservation, system):
+  if not _verify_reservation_configuration(parent_reservation, system, reservation):
     return [], 0
 
   if isinstance(reservation, SubBlockReservationLink):
@@ -450,41 +450,57 @@ def _calculate_target_accelerator_type(
 
 
 def _verify_reservation_configuration(
-    reservation: Reservation, system: SystemCharacteristics
+    reservation: Reservation,
+    system: SystemCharacteristics,
+    link: ReservationLink,
 ) -> bool:
   """Checks if the reservation matches the system requirements.
 
   Args:
     reservation: The reservation object.
     system: The system characteristics.
+    link: The reservation link (for logging/identification).
 
   Returns:
     True if valid, False otherwise. Prints error message on failure.
   """
-  if not reservation.specific_reservation:
-    return True
+  if reservation.specific_reservation:
+    if is_dry_run() and not reservation.specific_reservation.machine_type:
+      return True
 
-  if is_dry_run() and not reservation.specific_reservation.machine_type:
-    return True
-
-  if system.accelerator_type == AcceleratorType.TPU:
-    if reservation.specific_reservation.machine_type != system.gce_machine_type:
-      xpk_print(
-          f"ERROR: Reservation '{reservation.name}' has machine type"
-          f" '{reservation.specific_reservation.machine_type}', but requested"
-          f" system requires '{system.gce_machine_type}'."
+    if system.accelerator_type == AcceleratorType.TPU:
+      if (
+          reservation.specific_reservation.machine_type
+          != system.gce_machine_type
+      ):
+        xpk_print(
+            f"ERROR: Reservation '{reservation.name}' has machine type"
+            f" '{reservation.specific_reservation.machine_type}', but requested"
+            f" system requires '{system.gce_machine_type}'."
+        )
+        return False
+    elif system.accelerator_type == AcceleratorType.GPU:
+      target_accel = system.reservation_accelerator_type
+      has_matching_accelerator = any(
+          acc.accelerator_type == target_accel
+          for acc in reservation.specific_reservation.guest_accelerators
       )
-      return False
-  elif system.accelerator_type == AcceleratorType.GPU:
-    target_accel = system.reservation_accelerator_type
+      if not has_matching_accelerator:
+        xpk_print(
+            f"ERROR: Reservation '{reservation.name}' does not have a matching"
+            f" guest accelerator for '{target_accel}'."
+        )
+        return False
+  elif reservation.aggregate_reservation:
+    target_accelerator_type = _calculate_target_accelerator_type(link, system)
     has_matching_accelerator = any(
-        acc.accelerator_type == target_accel
-        for acc in reservation.specific_reservation.guest_accelerators
+        res.accelerator_type == target_accelerator_type
+        for res in reservation.aggregate_reservation.reserved_resources
     )
     if not has_matching_accelerator:
       xpk_print(
-          f"ERROR: Reservation '{reservation.name}' does not have a matching"
-          f" guest accelerator for '{target_accel}'."
+          f"ERROR: Aggregate Reservation '{reservation.name}' does not have a matching"
+          f" accelerator for '{target_accelerator_type}'."
       )
       return False
   return True

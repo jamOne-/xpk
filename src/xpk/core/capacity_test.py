@@ -893,3 +893,45 @@ def test_get_reservation_count_validates_gpu_accelerator_type(
   )
   assert return_code == 0
   assert not count
+
+
+@patch('xpk.core.capacity.project_id_to_project_number', return_value='12345')
+def test_assess_available_slices_aggregate_reservation_failure(
+    mock_project_id,
+    commands_tester: CommandsTester,
+    test_system: SystemCharacteristics,
+):
+  # For TPU, target type includes project number and zone
+  # This setup simulates a mismatch.
+  target_type = f'projects/12345/zones/zone/acceleratorTypes/{test_system.reservation_accelerator_type}'
+  json_output = f"""
+  {{
+      "aggregateReservation": {{
+          "reservedResources": [
+              {{
+                  "accelerator": {{
+                      "acceleratorType": "wrong-type",
+                      "acceleratorCount": 100
+                  }}
+              }}
+          ],
+          "inUseResources": []
+      }},
+      "status": "READY"
+  }}
+  """
+  commands_tester.set_result_for_command(
+      (0, json_output),
+      'gcloud beta compute reservations describe',
+  )
+  res = ReservationLink(project='project', name='reservation', zone='zone')
+
+  slices, return_code = assess_available_slices(
+      [res],
+      force_sub_block_targeting=False,
+      required_hosts=1,
+      system=test_system,
+  )
+
+  assert return_code == 0
+  assert not slices
