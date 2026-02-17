@@ -267,7 +267,7 @@ def _assess_available_slices_for_reservation(
         reservation, required_hosts
     )
     if return_code != 0:
-      return [], 0
+      return [], 1
     if available_slices > 0:
       return [ReservationCapacity(reservation, available_slices)], 0
     else:
