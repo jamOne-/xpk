@@ -154,7 +154,7 @@ def test_assess_available_slices_sub_block_unhealthy(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_block_healthy(
@@ -255,7 +255,7 @@ def test_assess_available_slices_block_unhealthy(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_link_with_blocks(
@@ -368,7 +368,7 @@ def test_assess_available_slices_link_without_blocks_sub_block_targeting(
       required_hosts=1,
       system=test_system,
   )
-  assert return_code == 0
+  assert return_code == 1
   assert not slices
 
 
@@ -397,7 +397,7 @@ def test_assess_available_slices_host_filtering_insufficient_hosts(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_host_filtering_sufficient_hosts(
@@ -532,7 +532,7 @@ def test_assess_available_slices_failures_sub_block_check(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_failures_block_sub_blocks_check(
@@ -568,7 +568,7 @@ def test_assess_available_slices_failures_block_sub_blocks_check(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_failures_reservation_blocks_check(
@@ -599,7 +599,7 @@ def test_assess_available_slices_failures_reservation_blocks_check(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_failures_reservation_count_check(
@@ -619,7 +619,7 @@ def test_assess_available_slices_failures_reservation_count_check(
   )
 
   assert not slices
-  assert return_code == 0
+  assert return_code == 1
 
 
 def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
@@ -691,33 +691,8 @@ def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
       system=test_system,
   )
 
-  assert return_code == 0
-  assert slices == [
-      ReservationCapacity(
-          SubBlockReservationLink(
-              project='project',
-              name='res1',
-              zone='zone',
-              block_name='block1',
-              sub_block_name='sub1',
-          ),
-          available_slices=1,
-      ),
-      ReservationCapacity(
-          SubBlockReservationLink(
-              project='project',
-              name='res1',
-              zone='zone',
-              block_name='block1',
-              sub_block_name='sub2',
-          ),
-          available_slices=1,
-      ),
-      ReservationCapacity(
-          sub_res_healthy,
-          available_slices=1,
-      ),
-  ]
+  assert return_code == 1
+  assert not slices
 
 
 def test_assess_available_slices_deduplicates(
@@ -825,7 +800,7 @@ def test_get_reservation_count_validates_tpu_machine_type(
       required_hosts=1,
       system=test_system,
   )
-  assert return_code == 0
+  assert return_code == 1
   assert not count
 
 
@@ -888,7 +863,7 @@ def test_get_reservation_count_validates_gpu_accelerator_type(
       required_hosts=1,
       system=gpu_system,
   )
-  assert return_code == 0
+  assert return_code == 1
   assert not count
 
 
@@ -929,5 +904,5 @@ def test_assess_available_slices_aggregate_reservation_failure(
       system=test_system,
   )
 
-  assert return_code == 0
+  assert return_code == 1
   assert not slices

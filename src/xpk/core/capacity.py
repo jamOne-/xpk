@@ -201,6 +201,7 @@ def assess_available_slices(
     force_sub_block_targeting: bool,
     required_hosts: int,
     system: SystemCharacteristics,
+    require_non_empty_capacities: bool = True,
 ) -> tuple[list[ReservationCapacity], int]:
   """Assess the available slices in the reservations.
 
@@ -209,6 +210,7 @@ def assess_available_slices(
     force_sub_block_targeting: if `True`, then the passed `ReservationLink` or `BlockReservationLink` will be flattened to adequate sub-blocks.
     required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
+    require_non_empty_capacities: if `True`, prints an error if a reservation has no capacity.
 
   Returns:
     List of capacity reservations with available slices.
@@ -219,19 +221,18 @@ def assess_available_slices(
         reservation, force_sub_block_targeting, required_hosts, system
     )
     if return_code != 0:
-      return [], 0
+      return [], return_code
+    if not capacities and require_non_empty_capacities:
+      xpk_print(
+          f'ERROR: Reservation {reservation.name} has no available capacity.'
+      )
+      return [], 1
     reservation_capacities.extend(capacities)
 
   # Deduplicate reservation_capacities, preserving order:
   reservation_capacities = list(dict.fromkeys(reservation_capacities))
 
   return reservation_capacities, 0
-
-
-def _get_dry_run_sub_blocks() -> str:
-  """Get dry run sub-blocks based on environment variable."""
-  default_json = '[{"name": "sub0", "count": 16, "inUseCount": 0}]'
-  return os.getenv('DRY_RUN_RESERVATION_SUB_BLOCKS', default_json)
 
 
 def _assess_available_slices_for_reservation(
@@ -271,10 +272,6 @@ def _assess_available_slices_for_reservation(
     if available_slices > 0:
       return [ReservationCapacity(reservation, available_slices)], 0
     else:
-      xpk_print(
-          f'WARNING: Sub-block {reservation.sub_block_name} is either'
-          ' unhealthy or not fitting. Skipping.'
-      )
       return [], 0
 
   if force_sub_block_targeting:
@@ -289,13 +286,13 @@ def _assess_available_slices_for_reservation(
       return [], 0
     if blocks:
       return assess_available_slices(
-          blocks, force_sub_block_targeting, required_hosts, system
+          blocks,
+          force_sub_block_targeting,
+          required_hosts,
+          system,
+          require_non_empty_capacities=False,
       )
 
-    xpk_print(
-        'WARNING: Super-slicing is enabled, but no blocks found in'
-        f' reservation {reservation.name}. Skipping.'
-    )
     return [], 0
 
   count, return_code = _get_reservation_count(
@@ -547,3 +544,9 @@ def _get_reservation_count(
 
   available_hosts = max(0, count - in_use_count)
   return available_hosts // required_hosts, 0
+
+
+def _get_dry_run_sub_blocks() -> str:
+  """Get dry run sub-blocks based on environment variable."""
+  default_json = '[{"name": "sub0", "count": 16, "inUseCount": 0}]'
+  return os.getenv('DRY_RUN_RESERVATION_SUB_BLOCKS', default_json)
