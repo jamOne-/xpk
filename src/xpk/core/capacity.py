@@ -235,7 +235,9 @@ def _get_dry_run_sub_blocks() -> str:
 
 
 def _assess_available_slices_for_reservation(
-    reservation: ReservationLink,
+    reservation: (
+        ReservationLink | BlockReservationLink | SubBlockReservationLink
+    ),
     force_sub_block_targeting: bool,
     required_hosts: int,
     system: SystemCharacteristics,
@@ -254,8 +256,8 @@ def _assess_available_slices_for_reservation(
   parent_reservation = get_reservation_cached(reservation)
 
   if not parent_reservation:
-    xpk_print(f"WARNING: Failed to fetch reservation '{reservation.name}'.")
-    return [], 0
+    xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
+    return [], 1
 
   if not _verify_reservation_configuration(parent_reservation, system):
     return [], 0
