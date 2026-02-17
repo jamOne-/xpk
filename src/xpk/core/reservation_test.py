@@ -308,11 +308,12 @@ def test_parse_reservation_without_specific_or_aggregate():
       'resourcePolicies': {'policy': 'compact-policy'},
       'status': 'READY',
   }
+  link = ReservationLink(project='project', name='res1', zone='zone')
 
-  reservation = _parse_reservation('res1', data)
+  reservation = _parse_reservation(link, data)
 
   assert reservation == Reservation(
-      name='res1',
+      link=link,
       aggregate_reservation=None,
       specific_reservation=None,
       deployment_type='DENSE',
@@ -335,11 +336,12 @@ def test_parse_specific_reservation():
       },
       'status': 'READY',
   }
+  link = ReservationLink(project='project', name='res1', zone='zone')
 
-  reservation = _parse_reservation('res1', data)
+  reservation = _parse_reservation(link, data)
 
   assert reservation == Reservation(
-      name='res1',
+      link=link,
       aggregate_reservation=None,
       specific_reservation=SpecificReservation(
           count=10,
@@ -372,11 +374,12 @@ def test_parse_aggregate_reservation():
       },
       'status': 'READY',
   }
+  link = ReservationLink(project='project', name='res1', zone='zone')
 
-  reservation = _parse_reservation('res1', data)
+  reservation = _parse_reservation(link, data)
 
   assert reservation == Reservation(
-      name='res1',
+      link=link,
       specific_reservation=None,
       aggregate_reservation=AggregateReservation(
           reserved_resources=[
@@ -476,15 +479,23 @@ def test_get_reservation_cached_returns_none_on_invalid_json(
 
 def test_parse_reservation_sub_block():
   data = {'name': 'sub1', 'count': 10, 'inUseCount': 2}
-  res = parse_reservation_sub_block(data)
-  assert res.name == 'sub1'
+  parent_link = BlockReservationLink(
+      project='project', name='res1', zone='zone', block_name='block1'
+  )
+  res = parse_reservation_sub_block(data, parent_link)
+  assert res.link.sub_block_name == 'sub1'
+  assert res.link.block_name == 'block1'
   assert res.count == 10
   assert res.in_use_count == 2
 
 
 def test_parse_reservation_sub_block_defaults():
   data = {}
-  res = parse_reservation_sub_block(data)
-  assert res.name == ''
+  parent_link = BlockReservationLink(
+      project='project', name='res1', zone='zone', block_name='block1'
+  )
+  res = parse_reservation_sub_block(data, parent_link)
+  assert res.link.sub_block_name == ''
+  assert res.link.block_name == 'block1'
   assert res.count == 0
   assert res.in_use_count == 0

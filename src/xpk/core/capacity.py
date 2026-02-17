@@ -18,7 +18,7 @@ import enum
 import os
 import json
 from dataclasses import dataclass
-from typing import Sequence, Any
+from typing import Sequence
 
 from .commands import run_command_for_value
 from .system_characteristics import AcceleratorType, SystemCharacteristics
@@ -259,7 +259,7 @@ def _assess_available_slices_for_reservation(
     xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
     return [], 1
 
-  if not _verify_reservation_configuration(parent_reservation, system, reservation):
+  if not _verify_reservation_configuration(parent_reservation, system):
     return [], 0
 
   if isinstance(reservation, SubBlockReservationLink):
@@ -299,7 +299,7 @@ def _assess_available_slices_for_reservation(
     return [], 0
 
   count, return_code = _get_reservation_count(
-      parent_reservation, required_hosts, system, reservation
+      parent_reservation, required_hosts, system
   )
   if return_code != 0:
     return [], return_code
@@ -348,7 +348,7 @@ def _list_healthy_sub_blocks(
     data = json.loads(output)
     if not data:
       return [], 0
-    return [parse_reservation_sub_block(row) for row in data], 0
+    return [parse_reservation_sub_block(row, reservation) for row in data], 0
   except (ValueError, IndexError, AttributeError, json.JSONDecodeError) as e:
     xpk_print(f'Error processing sub-block data: {e}. Output: "{output}".')
     return [], 1
@@ -384,13 +384,7 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
 
   available_capacities: list[ReservationCapacity] = [
       ReservationCapacity(
-          SubBlockReservationLink(
-              project=reservation.project,
-              name=reservation.name,
-              zone=reservation.zone,
-              block_name=reservation.block_name,
-              sub_block_name=sub_block.name,
-          ),
+          sub_block.link,
           available_slices=(sub_block.count - sub_block.in_use_count)
           // required_hosts,
       )
@@ -452,14 +446,12 @@ def _calculate_target_accelerator_type(
 def _verify_reservation_configuration(
     reservation: Reservation,
     system: SystemCharacteristics,
-    link: ReservationLink,
 ) -> bool:
   """Checks if the reservation matches the system requirements.
 
   Args:
     reservation: The reservation object.
     system: The system characteristics.
-    link: The reservation link (for logging/identification).
 
   Returns:
     True if valid, False otherwise. Prints error message on failure.
@@ -474,7 +466,7 @@ def _verify_reservation_configuration(
           != system.gce_machine_type
       ):
         xpk_print(
-            f"ERROR: Reservation '{reservation.name}' has machine type"
+            f"ERROR: Reservation '{reservation.link.name}' has machine type"
             f" '{reservation.specific_reservation.machine_type}', but requested"
             f" system requires '{system.gce_machine_type}'."
         )
@@ -487,20 +479,22 @@ def _verify_reservation_configuration(
       )
       if not has_matching_accelerator:
         xpk_print(
-            f"ERROR: Reservation '{reservation.name}' does not have a matching"
-            f" guest accelerator for '{target_accel}'."
+            f"ERROR: Reservation '{reservation.link.name}' does not have a"
+            f" matching guest accelerator for '{target_accel}'."
         )
         return False
   elif reservation.aggregate_reservation:
-    target_accelerator_type = _calculate_target_accelerator_type(link, system)
+    target_accelerator_type = _calculate_target_accelerator_type(
+        reservation.link, system
+    )
     has_matching_accelerator = any(
         res.accelerator_type == target_accelerator_type
         for res in reservation.aggregate_reservation.reserved_resources
     )
     if not has_matching_accelerator:
       xpk_print(
-          f"ERROR: Aggregate Reservation '{reservation.name}' does not have a matching"
-          f" accelerator for '{target_accelerator_type}'."
+          f"ERROR: Aggregate Reservation '{reservation.link.name}' does not"
+          f" have a matching accelerator for '{target_accelerator_type}'."
       )
       return False
   return True
@@ -510,7 +504,6 @@ def _get_reservation_count(
     reservation: Reservation,
     required_hosts: int,
     system: SystemCharacteristics,
-    link: ReservationLink,
 ) -> tuple[int, int]:
   """Get capacity count of a reservation.
 
@@ -518,7 +511,6 @@ def _get_reservation_count(
     reservation: The reservation object.
     required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
-    link: The reservation link (for logging/identification).
 
   Returns:
     Number of available slots in the reservation.
@@ -531,7 +523,9 @@ def _get_reservation_count(
     in_use_count = int(reservation.specific_reservation.in_use_count)
   elif reservation.aggregate_reservation:
     reserved_resources = reservation.aggregate_reservation.reserved_resources
-    target_accelerator_type = _calculate_target_accelerator_type(link, system)
+    target_accelerator_type = _calculate_target_accelerator_type(
+        reservation.link, system
+    )
     count = next(
         (
             r.accelerator_count

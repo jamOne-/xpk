@@ -781,9 +781,6 @@ def test_assess_available_slices_deduplicates(
   ]
 
 
-
-
-
 def test_get_reservation_count_validates_tpu_machine_type(
     commands_tester: CommandsTester, test_system: SystemCharacteristics
 ):
@@ -903,22 +900,21 @@ def test_assess_available_slices_aggregate_reservation_failure(
 ):
   # For TPU, target type includes project number and zone
   # This setup simulates a mismatch.
-  target_type = f'projects/12345/zones/zone/acceleratorTypes/{test_system.reservation_accelerator_type}'
-  json_output = f"""
-  {{
-      "aggregateReservation": {{
+  json_output = """
+  {
+      "aggregateReservation": {
           "reservedResources": [
-              {{
-                  "accelerator": {{
+              {
+                  "accelerator": {
                       "acceleratorType": "wrong-type",
                       "acceleratorCount": 100
-                  }}
-              }}
+                  }
+              }
           ],
           "inUseResources": []
-      }},
+      },
       "status": "READY"
-  }}
+  }
   """
   commands_tester.set_result_for_command(
       (0, json_output),

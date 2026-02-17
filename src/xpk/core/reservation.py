@@ -65,7 +65,7 @@ class AggregateReservation:
 
 @dataclass(frozen=True)
 class Reservation:
-  name: str
+  link: ReservationLink
   specific_reservation: SpecificReservation | None
   aggregate_reservation: AggregateReservation | None
   deployment_type: str = ''
@@ -74,7 +74,7 @@ class Reservation:
 
 @dataclass(frozen=True)
 class ReservationSubBlock:
-  name: str
+  link: SubBlockReservationLink
   count: int
   in_use_count: int
 
@@ -120,7 +120,9 @@ def _parse_aggregate_reservation(data: dict[str, Any]) -> AggregateReservation:
   )
 
 
-def _parse_reservation(name: str, data: dict[str, Any]) -> Reservation:
+def _parse_reservation(
+    link: ReservationLink, data: dict[str, Any]
+) -> Reservation:
   specific_reservation = None
   if 'specificReservation' in data:
     specific_reservation = _parse_specific_reservation(
@@ -137,7 +139,7 @@ def _parse_reservation(name: str, data: dict[str, Any]) -> Reservation:
   resource_policy = data.get('resourcePolicies', {}).get('policy', '')
 
   return Reservation(
-      name=name,
+      link=link,
       specific_reservation=specific_reservation,
       aggregate_reservation=aggregate_reservation,
       deployment_type=deployment_type,
@@ -145,9 +147,17 @@ def _parse_reservation(name: str, data: dict[str, Any]) -> Reservation:
   )
 
 
-def parse_reservation_sub_block(data: dict[str, Any]) -> ReservationSubBlock:
+def parse_reservation_sub_block(
+    data: dict[str, Any], parent_link: BlockReservationLink
+) -> ReservationSubBlock:
   return ReservationSubBlock(
-      name=str(data.get('name', '')),
+      link=SubBlockReservationLink(
+          project=parent_link.project,
+          name=parent_link.name,
+          zone=parent_link.zone,
+          block_name=parent_link.block_name,
+          sub_block_name=str(data.get('name', '')),
+      ),
       count=int(data.get('count', 0)),
       in_use_count=int(data.get('inUseCount', '0')),
   )
@@ -193,7 +203,7 @@ def get_reservation_cached(
     data = json.loads(output)
     if not data or data.get('status') != 'READY':
       return None
-    return _parse_reservation(reservation.name, data)
+    return _parse_reservation(reservation, data)
   except (ValueError, IndexError, AttributeError, json.JSONDecodeError) as e:
     xpk_print(f'Error processing reservation data: {e}. Output: "{output}".')
     return None
