@@ -22,9 +22,6 @@ from functools import lru_cache
 from google.api_core.exceptions import PermissionDenied
 from google.cloud import resourcemanager_v3
 
-from google.api_core.exceptions import PermissionDenied
-from google.cloud import resourcemanager_v3
-
 from ..utils.console import xpk_print, xpk_exit
 from ..utils.versions import ReleaseChannel
 from ..utils.execution_context import is_dry_run
@@ -215,8 +212,8 @@ def get_gke_control_plane_version(
 
   if not is_valid_version:
     xpk_print(
-        f'Planned GKE Version: {master_gke_version}\\n Valid Versions:'
-        f'\\n{gke_server_config.valid_versions}\\nRecommended / Default GKE'
+        f'Planned GKE Version: {master_gke_version}\n Valid Versions:'
+        f'\n{gke_server_config.valid_versions}\nRecommended / Default GKE'
         f' Version: {gke_server_config.default_gke_version}'
     )
     xpk_print(
