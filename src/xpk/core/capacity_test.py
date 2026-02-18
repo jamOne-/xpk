@@ -15,8 +15,10 @@ limitations under the License.
 """
 
 import pytest
-from typing import Iterator
+import json
+from typing import Iterator, Any
 from unittest.mock import patch
+from dataclasses import dataclass, field
 
 from .capacity import (
     get_capacity_type,
@@ -30,6 +32,9 @@ from .capacity import (
 from .reservation import (
     get_reservation_cached,
     get_reservation_accelerator_type,
+    SpecificReservation,
+    AggregateReservation,
+    AcceleratorResource,
 )
 from .testing.commands_tester import CommandsTester
 from .system_characteristics import SystemCharacteristics, AcceleratorType, DockerPlatform, GpuConfig
@@ -64,6 +69,114 @@ def test_system() -> SystemCharacteristics:
   )
 
 
+@dataclass(frozen=True)
+class _MockSubBlock:
+  count: int
+  in_use_count: int
+  name: str = 'sub-block'
+
+  def to_dict(self) -> dict[str, Any]:
+    return {
+        'name': self.name,
+        'count': self.count,
+        'inUseCount': self.in_use_count,
+    }
+
+
+@dataclass(frozen=True)
+class _MockBlock:
+  name: str = 'block'
+  sub_blocks: list[_MockSubBlock] = field(default_factory=list)
+
+
+def _accelerator_resource_to_dict(
+    resource: AcceleratorResource,
+) -> dict[str, Any]:
+  return {
+      'accelerator': {
+          'acceleratorType': resource.accelerator_type,
+          'acceleratorCount': resource.accelerator_count,
+      }
+  }
+
+
+def _aggregate_reservation_to_dict(
+    reservation: AggregateReservation,
+) -> dict[str, Any]:
+  return {
+      'reservedResources': [
+          _accelerator_resource_to_dict(r)
+          for r in reservation.reserved_resources
+      ],
+      'inUseResources': [
+          _accelerator_resource_to_dict(r) for r in reservation.in_use_resources
+      ],
+  }
+
+
+def _specific_reservation_to_dict(
+    reservation: SpecificReservation,
+) -> dict[str, Any]:
+  instance_props: dict[str, Any] = {'machineType': reservation.machine_type}
+  if reservation.guest_accelerators:
+    instance_props['guestAccelerators'] = [
+        {'acceleratorType': acc.accelerator_type}
+        for acc in reservation.guest_accelerators
+    ]
+
+  return {
+      'count': reservation.count,
+      'inUseCount': reservation.in_use_count,
+      'instanceProperties': instance_props,
+  }
+
+
+def setup_mock_reservation(
+    commands_tester: CommandsTester,
+    specific_reservation: SpecificReservation | None = None,
+    aggregate_reservation: AggregateReservation | None = None,
+    status: str = 'READY',
+    blocks: list[_MockBlock] | None = None,
+):
+  if aggregate_reservation:
+    describe_json: dict[str, Any] = {
+        'status': status,
+        'aggregateReservation': _aggregate_reservation_to_dict(
+            aggregate_reservation
+        ),
+    }
+  else:
+    if specific_reservation is None:
+      specific_reservation = SpecificReservation(
+          count=0, in_use_count=0, machine_type='test-machine'
+      )
+    describe_json = {
+        'status': status,
+        'specificReservation': _specific_reservation_to_dict(
+            specific_reservation
+        ),
+    }
+
+  commands_tester.set_result_for_command(
+      (0, json.dumps(describe_json)),
+      'gcloud beta compute reservations describe',
+  )
+
+  if blocks is not None:
+    block_names = [b.name for b in blocks]
+    commands_tester.set_result_for_command(
+        (0, '\n'.join(block_names)),
+        'gcloud beta compute reservations blocks list',
+    )
+
+    for block in blocks:
+      commands_tester.set_result_for_command(
+          (0, json.dumps([sb.to_dict() for sb in block.sub_blocks])),
+          'gcloud beta compute reservations sub-blocks list',
+          f'--block-name={block.name}',
+      )
+
+
 def test_get_capacity_type_multiple_reservations(mocker):
   mocker.patch('xpk.core.capacity.verify_reservations_exist', return_value=0)
   args = mocker.Mock(
@@ -85,20 +198,17 @@ def test_assess_available_slices_sub_block_healthy(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=6, in_use_count=1, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  commands_tester.set_result_for_command(
-      (0, '[{"count": 1, "inUseCount": 0}]'),
-      'gcloud beta compute reservations sub-blocks list',
+      blocks=[
+          _MockBlock(
+              name='block',
+              sub_blocks=[_MockSubBlock(count=6, in_use_count=1)],
+          )
+      ],
   )
   res = SubBlockReservationLink(
       project='project',
@@ -111,11 +221,11 @@ def test_assess_available_slices_sub_block_healthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
+      required_hosts=2,
       system=test_system,
   )
 
-  assert slices == [ReservationCapacity(res, 1)]
+  assert slices == [ReservationCapacity(res, 2)]
   assert return_code == 0
 
 
@@ -123,19 +233,12 @@ def test_assess_available_slices_sub_block_unhealthy(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=48, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  commands_tester.set_result_for_command(
-      (0, '[]'), 'gcloud beta compute reservations sub-blocks list'
+      blocks=[_MockBlock(name='block', sub_blocks=[])],
   )
   res = SubBlockReservationLink(
       project='project',
@@ -158,28 +261,20 @@ def test_assess_available_slices_sub_block_unhealthy(
 def test_assess_available_slices_block_healthy(
     commands_tester: CommandsTester, test_system: SystemCharacteristics
 ):
-  # Mock describe
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  # Mock 2 healthy sub-blocks
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '[{"name": "sub1", "count": 1, "inUseCount": 0}, {"name":'
-              ' "sub2", "count": 1, "inUseCount": 0}]'
-          ),
-      ),
-      'gcloud beta compute reservations sub-blocks list',
+      blocks=[
+          _MockBlock(
+              name='block',
+              sub_blocks=[
+                  _MockSubBlock(name='sub1', count=4, in_use_count=1),
+                  _MockSubBlock(name='sub2', count=6, in_use_count=1),
+              ],
+          )
+      ],
   )
   res = BlockReservationLink(
       project='project',
@@ -191,7 +286,7 @@ def test_assess_available_slices_block_healthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=1,
+      required_hosts=2,
       system=test_system,
   )
 
@@ -215,7 +310,7 @@ def test_assess_available_slices_block_healthy(
               block_name='block',
               sub_block_name='sub2',
           ),
-          available_slices=1,
+          available_slices=2,
       ),
   ]
 
@@ -224,19 +319,12 @@ def test_assess_available_slices_block_unhealthy(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=48, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  commands_tester.set_result_for_command(
-      (0, '[]'), 'gcloud beta compute reservations sub-blocks list'
+      blocks=[_MockBlock(name='block', sub_blocks=[])],
   )
   res = BlockReservationLink(
       project='project',
@@ -256,28 +344,21 @@ def test_assess_available_slices_block_unhealthy(
   assert return_code == 1
 
 
-def test_assess_available_slices_link_with_blocks(
+def test_assess_available_slices_reservation_with_sub_block_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=48, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  commands_tester.set_result_for_command(
-      (0, 'block1'), 'gcloud beta compute reservations blocks list'
-  )
-  commands_tester.set_result_for_command(
-      (0, '[{"name": "sub1", "count": 1, "inUseCount": 0}]'),
-      'gcloud beta compute reservations sub-blocks list',
-      '--block-name=block1',
+      blocks=[
+          _MockBlock(
+              name='block1',
+              sub_blocks=[_MockSubBlock(name='sub1', count=1, in_use_count=0)],
+          )
+      ],
   )
 
   res = ReservationLink(project='project', name='reservation', zone='zone')
@@ -303,33 +384,26 @@ def test_assess_available_slices_link_with_blocks(
   ]
 
 
-def test_assess_available_slices_link_without_blocks(
+def test_assess_available_slices_reservation_without_sub_block_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (0, ''), 'gcloud beta compute reservations blocks list'
-  )
-  # Mock getting count
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 2, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=4, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
+      blocks=[],
   )
 
   res = ReservationLink(project='project', name='reservation', zone='zone')
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
+      required_hosts=3,
       system=test_system,
   )
+
   assert return_code == 0
   assert slices == [
       ReservationCapacity(
@@ -339,24 +413,16 @@ def test_assess_available_slices_link_without_blocks(
   ]
 
 
-def test_assess_available_slices_link_without_blocks_sub_block_targeting(
+def test_assess_available_slices_reservation_without_blocks_sub_block_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (0, ''), 'gcloud beta compute reservations blocks list'
-  )
-  # Mock getting count
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 2, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=2, in_use_count=0, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
+      blocks=[],
   )
 
   res = ReservationLink(project='project', name='reservation', zone='zone')
@@ -366,81 +432,63 @@ def test_assess_available_slices_link_without_blocks_sub_block_targeting(
       required_hosts=1,
       system=test_system,
   )
+
   assert return_code == 1
   assert not slices
 
 
-def test_assess_available_slices_host_filtering_insufficient_hosts(
+@pytest.mark.parametrize(
+    argnames='link',
+    argvalues=[
+        ReservationLink(
+            project='project',
+            name='reservation',
+            zone='zone',
+        ),
+        BlockReservationLink(
+            project='project',
+            name='reservation',
+            zone='zone',
+            block_name='block',
+        ),
+        SubBlockReservationLink(
+            project='project',
+            name='reservation',
+            zone='zone',
+            block_name='block',
+            sub_block_name='sub-block',
+        ),
+    ],
+)
+def test_assess_available_slices_insufficient_hosts(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
+    link: ReservationLink | BlockReservationLink | SubBlockReservationLink,
 ):
-  # Mock describe
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=16, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-  # Mock a sub-block that has 14 free hosts but we need 16
-  commands_tester.set_result_for_command(
-      (0, '[{"count": 16, "inUseCount": 2}]'),
-      'gcloud beta compute reservations sub-blocks list',
-  )
-  res = SubBlockReservationLink(
-      project='project',
-      name='reservation',
-      zone='zone',
-      block_name='block',
-      sub_block_name='sub-block',
+      blocks=[
+          _MockBlock(
+              name='block',
+              sub_blocks=[
+                  _MockSubBlock(name='sub-block', count=16, in_use_count=2)
+              ],
+          )
+      ],
   )
 
   slices, return_code = assess_available_slices(
-      [res],
-      force_sub_block_targeting=False,
+      [link],
+      force_sub_block_targeting=True,
       required_hosts=16,
       system=test_system,
   )
 
   assert not slices
   assert return_code == 1
-
-
-def test_assess_available_slices_host_filtering_sufficient_hosts(
-    commands_tester: CommandsTester,
-    test_system: SystemCharacteristics,
-):
-  # Mock a reservation that has 46 free hosts, and we need 16 per slice.
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
-      ),
-      'gcloud beta compute reservations describe',
-  )
-  res_link = ReservationLink(project='p', name='r', zone='z')
-
-  slices, return_code = assess_available_slices(
-      [res_link],
-      force_sub_block_targeting=False,
-      required_hosts=16,
-      system=test_system,
-  )
-
-  assert return_code == 0
-  assert slices == [
-      ReservationCapacity(
-          ReservationLink(project='p', name='r', zone='z'), available_slices=2
-      )
-  ]
 
 
 @patch('xpk.core.capacity.project_id_to_project_number', return_value='12345')
@@ -451,44 +499,27 @@ def test_assess_available_slices_aggregate_reservation(
 ):
   # For TPU, target type includes project number and zone
   target_type = f'projects/12345/zones/zone/acceleratorTypes/{get_reservation_accelerator_type(test_system)}'
-  json_output = f"""
-  {{
-      "aggregateReservation": {{
-          "reservedResources": [
-              {{
-                  "accelerator": {{
-                      "acceleratorType": "{target_type}",
-                      "acceleratorCount": 100
-                  }}
-              }},
-              {{
-                  "accelerator": {{
-                      "acceleratorType": "wrong-type",
-                      "acceleratorCount": 100
-                  }}
-              }}
-          ],
-          "inUseResources": [
-              {{
-                  "accelerator": {{
-                      "acceleratorType": "{target_type}",
-                      "acceleratorCount": 20
-                  }}
-              }},
-              {{
-                  "accelerator": {{
-                      "acceleratorType": "accelerator-2",
-                      "acceleratorCount": 50
-                  }}
-              }}
-          ]
-      }},
-      "status": "READY"
-  }}
-  """
-  commands_tester.set_result_for_command(
-      (0, json_output),
-      'gcloud beta compute reservations describe',
+  aggregate_payload = AggregateReservation(
+      reserved_resources=[
+          AcceleratorResource(
+              accelerator_type=target_type, accelerator_count=100
+          ),
+          AcceleratorResource(
+              accelerator_type='wrong-type', accelerator_count=100
+          ),
+      ],
+      in_use_resources=[
+          AcceleratorResource(
+              accelerator_type=target_type, accelerator_count=20
+          ),
+          AcceleratorResource(
+              accelerator_type='accelerator-2', accelerator_count=50
+          ),
+      ],
+  )
+  setup_mock_reservation(
+      commands_tester,
+      aggregate_reservation=aggregate_payload,
   )
   res = ReservationLink(project='project', name='reservation', zone='zone')
 
@@ -512,16 +543,11 @@ def test_assess_available_slices_failures_sub_block_check(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 100, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=100, in_use_count=0, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_sub = SubBlockReservationLink(
       project='project',
@@ -549,16 +575,11 @@ def test_assess_available_slices_failures_block_sub_blocks_check(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 100, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=100, in_use_count=0, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_block = BlockReservationLink(
       project='project',
@@ -585,16 +606,11 @@ def test_assess_available_slices_failures_reservation_blocks_check(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 100, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=100, in_use_count=0, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
   )
   res = ReservationLink(project='project', name='reservation', zone='zone')
   commands_tester.set_result_for_command(
@@ -636,116 +652,47 @@ def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  # Mock describe for all reservations
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=48, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
-  )
-
-  # Mock block reservation with 2 healthy sub-blocks
-
-  block_res = BlockReservationLink(
-      project='project', name='res1', zone='zone', block_name='block1'
-  )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '[{"name": "sub1", "count": 1, "inUseCount": 0}, {"name":'
-              ' "sub2", "count": 1, "inUseCount": 0}]'
+      blocks=[
+          _MockBlock(
+              name='block10',
+              sub_blocks=[
+                  _MockSubBlock(name='sub11', count=1, in_use_count=0),
+                  _MockSubBlock(name='sub12', count=1, in_use_count=0),
+              ],
           ),
-      ),
-      'gcloud beta compute reservations sub-blocks list res1',
-      '--block-name=block1',
-  )
-
-  # Mock healthy sub-block reservation
-  sub_res_healthy = SubBlockReservationLink(
-      project='project',
-      name='res2',
-      zone='zone',
-      block_name='block2',
-      sub_block_name='sub3',
-  )
-  commands_tester.set_result_for_command(
-      (0, '[{"count": 1, "inUseCount": 0}]'),
-      'gcloud beta compute reservations sub-blocks list res2',
-      '--filter="name=sub3 AND healthInfo.healthStatus=HEALTHY"',
-  )
-
-  # Mock unhealthy sub-block reservation
-  sub_res_unhealthy = SubBlockReservationLink(
-      project='project',
-      name='res3',
-      zone='zone',
-      block_name='block3',
-      sub_block_name='sub4',
-  )
-  commands_tester.set_result_for_command(
-      (0, '[]'),
-      'gcloud beta compute reservations sub-blocks list res3',
-      '--filter="name=sub4 AND healthInfo.healthStatus=HEALTHY"',
-  )
-
-  slices, return_code = assess_available_slices(
-      [block_res, sub_res_healthy, sub_res_unhealthy],
-      force_sub_block_targeting=True,
-      required_hosts=1,
-      system=test_system,
-  )
-
-  assert return_code == 1
-  assert not slices
-
-
-def test_assess_available_slices_deduplicates(
-    commands_tester: CommandsTester, test_system: SystemCharacteristics
-):
-  # Mock describe
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 48, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
+          _MockBlock(
+              name='block20',
+              sub_blocks=[_MockSubBlock(name='sub21', count=1, in_use_count=0)],
           ),
-      ),
-      'gcloud beta compute reservations describe',
+          _MockBlock(
+              name='block30',
+              sub_blocks=[_MockSubBlock(name='sub31', count=1, in_use_count=0)],
+          ),
+          _MockBlock(name='block40', sub_blocks=[]),
+      ],
   )
 
-  block_res = BlockReservationLink(
-      project='project', name='res1', zone='zone', block_name='block1'
+  reservation_link = ReservationLink(
+      project='project', name='res1', zone='zone'
   )
-  sub_block_name = 'sub1'
-  commands_tester.set_result_for_command(
-      (0, f'[{{"name": "{sub_block_name}", "count": 1, "inUseCount": 0}}]'),
-      'gcloud beta compute reservations sub-blocks list res1',
-      '--block-name=block1',
+  block_link = BlockReservationLink(
+      project='project', name='res1', zone='zone', block_name='block10'
   )
-  sub_res = SubBlockReservationLink(
+  sub_block_link = SubBlockReservationLink(
       project='project',
       name='res1',
       zone='zone',
-      block_name='block1',
-      sub_block_name=sub_block_name,
-  )
-  commands_tester.set_result_for_command(
-      (0, '[{"count": 1, "inUseCount": 0}]'),
-      'gcloud beta compute reservations sub-blocks list res1',
-      '--block-name=block1',
-      f'--filter="name={sub_block_name}',
+      block_name='block20',
+      sub_block_name='sub21',
   )
 
   slices, return_code = assess_available_slices(
-      [block_res, sub_res],
+      [block_link, sub_block_link, reservation_link],
       force_sub_block_targeting=True,
       required_hosts=1,
       system=test_system,
@@ -758,63 +705,89 @@ def test_assess_available_slices_deduplicates(
               project='project',
               name='res1',
               zone='zone',
-              block_name='block1',
-              sub_block_name='sub1',
+              block_name='block10',
+              sub_block_name='sub11',
           ),
           available_slices=1,
-      )
+      ),
+      ReservationCapacity(
+          SubBlockReservationLink(
+              project='project',
+              name='res1',
+              zone='zone',
+              block_name='block10',
+              sub_block_name='sub12',
+          ),
+          available_slices=1,
+      ),
+      ReservationCapacity(
+          SubBlockReservationLink(
+              project='project',
+              name='res1',
+              zone='zone',
+              block_name='block20',
+              sub_block_name='sub21',
+          ),
+          available_slices=1,
+      ),
+      ReservationCapacity(
+          SubBlockReservationLink(
+              project='project',
+              name='res1',
+              zone='zone',
+              block_name='block30',
+              sub_block_name='sub31',
+          ),
+          available_slices=1,
+      ),
   ]
 
 
-def test_get_reservation_count_validates_tpu_machine_type(
+def test_assess_available_slices_tpu_reservation_success(
     commands_tester: CommandsTester, test_system: SystemCharacteristics
 ):
-  # Success case: matches
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "test-machine"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=2, machine_type='test-machine'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link = ReservationLink(project='p', name='r', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=test_system,
   )
-  assert return_code == 0
-  assert count[0].available_slices == 8
 
-  # Failure case: mismatch
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "wrong-machine"}},'
-              ' "status": "READY"}'
-          ),
+  assert return_code == 0
+  assert capacity[0].available_slices == 8
+
+
+def test_assess_available_slices_tpu_reservation_failure(
+    commands_tester: CommandsTester, test_system: SystemCharacteristics
+):
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=2, machine_type='wrong-machine'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link_fail = ReservationLink(project='p', name='r-fail', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=test_system,
   )
+
   assert return_code == 1
-  assert not count
+  assert not capacity
 
 
-def test_get_reservation_count_validates_gpu_accelerator_type(
+def test_assess_available_slices_gpu_reservation_success(
     commands_tester: CommandsTester,
 ):
   gpu_system = SystemCharacteristics(
@@ -831,50 +804,73 @@ def test_get_reservation_count_validates_gpu_accelerator_type(
       docker_platform=DockerPlatform.AMD,
       gpu_config=GpuConfig(requires_topology=False),
   )
-
-  # Success case: matches
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"guestAccelerators":'
-              ' [{"acceleratorType": "nvidia-test"}]}}, "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10,
+          in_use_count=2,
+          machine_type='test-machine',
+          guest_accelerators=[
+              AcceleratorResource(
+                  accelerator_type='nvidia-test', accelerator_count=1
+              )
+          ],
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link = ReservationLink(project='p', name='r', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=gpu_system,
   )
-  assert return_code == 0
-  assert count[0].available_slices == 8
 
-  # Failure case: mismatch
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"guestAccelerators":'
-              ' [{"acceleratorType": "nvidia-wrong"}]}}, "status": "READY"}'
-          ),
+  assert return_code == 0
+  assert capacity[0].available_slices == 8
+
+
+def test_assess_available_slices_gpu_reservation_failure(
+    commands_tester: CommandsTester,
+):
+  gpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='nvidia-test',
+      gce_machine_type='g2-standard-12',
+      chips_per_vm=1,
+      accelerator_type=AcceleratorType.GPU,
+      device_type='test-gpu',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+      gpu_config=GpuConfig(requires_topology=False),
+  )
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10,
+          in_use_count=2,
+          machine_type='test-machine',
+          guest_accelerators=[
+              AcceleratorResource(
+                  accelerator_type='nvidia-wrong', accelerator_count=1
+              )
+          ],
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link_fail = ReservationLink(project='p', name='r-fail', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=gpu_system,
   )
+
   assert return_code == 1
-  assert not count
+  assert not capacity
 
 
 @patch('xpk.core.capacity.project_id_to_project_number', return_value='12345')
@@ -885,25 +881,17 @@ def test_assess_available_slices_aggregate_reservation_failure(
 ):
   # For TPU, target type includes project number and zone
   # This setup simulates a mismatch.
-  json_output = """
-  {
-      "aggregateReservation": {
-          "reservedResources": [
-              {
-                  "accelerator": {
-                      "acceleratorType": "wrong-type",
-                      "acceleratorCount": 100
-                  }
-              }
-          ],
-          "inUseResources": []
-      },
-      "status": "READY"
-  }
-  """
-  commands_tester.set_result_for_command(
-      (0, json_output),
-      'gcloud beta compute reservations describe',
+  aggregate_payload = AggregateReservation(
+      reserved_resources=[
+          AcceleratorResource(
+              accelerator_type='wrong-type', accelerator_count=100
+          )
+      ],
+      in_use_resources=[],
+  )
+  setup_mock_reservation(
+      commands_tester,
+      aggregate_reservation=aggregate_payload,
   )
   res = ReservationLink(project='project', name='reservation', zone='zone')
 
@@ -918,7 +906,7 @@ def test_assess_available_slices_aggregate_reservation_failure(
   assert not slices
 
 
-def test_assess_available_slices_cpu_reservation(
+def test_assess_available_slices_cpu_reservation_success(
     commands_tester: CommandsTester,
 ):
   cpu_system = SystemCharacteristics(
@@ -935,46 +923,56 @@ def test_assess_available_slices_cpu_reservation(
       docker_platform=DockerPlatform.AMD,
   )
 
-  # Success case: matches
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "n2-standard-32"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=2, machine_type='n2-standard-32'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link = ReservationLink(project='p', name='r', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=cpu_system,
   )
-  assert return_code == 0
-  assert count[0].available_slices == 8
 
-  # Failure case: mismatch
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 10, "inUseCount": 2,'
-              ' "instanceProperties": {"machineType": "n2-standard-64"}},'
-              ' "status": "READY"}'
-          ),
+  assert return_code == 0
+  assert capacity[0].available_slices == 8
+
+
+def test_assess_available_slices_cpu_reservation_failure(
+    commands_tester: CommandsTester,
+):
+  cpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='N/A',
+      gce_machine_type='n2-standard-32',
+      chips_per_vm=32,
+      accelerator_type=AcceleratorType.CPU,
+      device_type='n2-standard-32-1',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+  )
+
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10, in_use_count=2, machine_type='n2-standard-64'
       ),
-      'gcloud beta compute reservations describe',
   )
   res_link_fail = ReservationLink(project='p', name='r-fail', zone='z')
-  count, return_code = assess_available_slices(
+
+  capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
       required_hosts=1,
       system=cpu_system,
   )
+
   assert return_code == 1
-  assert not count
+  assert not capacity
