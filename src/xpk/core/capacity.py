@@ -466,7 +466,10 @@ def _verify_reservation_configuration(
     return True
 
   if reservation.specific_reservation:
-    if system.accelerator_type == AcceleratorType.TPU:
+    if (
+        system.accelerator_type == AcceleratorType.TPU
+        or system.accelerator_type == AcceleratorType.CPU
+    ):
       if (
           reservation.specific_reservation.machine_type
           != system.gce_machine_type

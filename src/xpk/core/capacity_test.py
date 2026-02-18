@@ -918,3 +918,65 @@ def test_assess_available_slices_aggregate_reservation_failure(
 
   assert return_code == 1
   assert not slices
+
+
+def test_assess_available_slices_cpu_reservation(
+    commands_tester: CommandsTester,
+):
+  cpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='N/A',
+      gce_machine_type='n2-standard-32',
+      chips_per_vm=32,
+      accelerator_type=AcceleratorType.CPU,
+      device_type='n2-standard-32-1',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+  )
+
+  # Success case: matches
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 10, "inUseCount": 2,'
+              ' "instanceProperties": {"machineType": "n2-standard-32"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      'gcloud beta compute reservations describe',
+  )
+  res_link = ReservationLink(project='p', name='r', zone='z')
+  count, return_code = assess_available_slices(
+      [res_link],
+      force_sub_block_targeting=False,
+      required_hosts=1,
+      system=cpu_system,
+  )
+  assert return_code == 0
+  assert count[0].available_slices == 8
+
+  # Failure case: mismatch
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 10, "inUseCount": 2,'
+              ' "instanceProperties": {"machineType": "n2-standard-64"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      'gcloud beta compute reservations describe',
+  )
+  res_link_fail = ReservationLink(project='p', name='r-fail', zone='z')
+  count, return_code = assess_available_slices(
+      [res_link_fail],
+      force_sub_block_targeting=False,
+      required_hosts=1,
+      system=cpu_system,
+  )
+  assert return_code == 1
+  assert not count
