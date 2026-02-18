@@ -132,7 +132,6 @@ class SystemCharacteristics:
     requires_workload_policy: A boolean indicating if a GCE resource
       workload policy is required. This is automatically set to True for GPUs.
     parallel_containers: The number of containers running on a single VM.
-    reservation_accelerator_type: The accelerator type used for reservation.
 
   """
 
@@ -168,14 +167,6 @@ class SystemCharacteristics:
     defaulting to False if no GPU config exists.
     """
     return self.gpu_config.requires_topology if self.gpu_config else False
-
-  @property
-  def reservation_accelerator_type(self) -> str | None:
-    if self.accelerator_type == AcceleratorType.TPU:
-      return self.gce_machine_type.split('-')[0]
-    elif self.accelerator_type == AcceleratorType.GPU:
-      return self.gke_accelerator
-    return None
 
 
 def get_system_characteristics(

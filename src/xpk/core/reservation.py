@@ -20,6 +20,7 @@ from functools import lru_cache
 from typing import Any
 
 from .commands import run_command_with_updates, run_command_for_value
+from .system_characteristics import AcceleratorType, SystemCharacteristics
 from ..utils.console import xpk_print, xpk_exit
 
 RESERVATION_CONFIG_KEY = 'reservation_id'
@@ -395,3 +396,21 @@ def to_reservation_path(
     if isinstance(reservation, SubBlockReservationLink):
       path += f'/reservationSubBlocks/{reservation.sub_block_name}'
   return path
+
+
+def get_reservation_accelerator_type(
+    system: SystemCharacteristics,
+) -> str | None:
+  """Get the accelerator type for a given system used in aggregate reservation.
+
+  Args:
+    system: The system characteristics.
+
+  Returns:
+    The reservation accelerator type as a string, or None if not applicable.
+  """
+  if system.accelerator_type == AcceleratorType.TPU:
+    return system.gce_machine_type.split('-')[0]
+  elif system.accelerator_type == AcceleratorType.GPU:
+    return system.gke_accelerator
+  return None

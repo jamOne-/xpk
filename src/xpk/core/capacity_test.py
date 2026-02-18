@@ -32,6 +32,7 @@ from .capacity import (
 )
 from .reservation import (
     get_reservation_cached,
+    get_reservation_accelerator_type,
 )
 from xpk.core.testing.commands_tester import CommandsTester
 from .system_characteristics import SystemCharacteristics, AcceleratorType, DockerPlatform, GpuConfig
@@ -452,7 +453,7 @@ def test_assess_available_slices_aggregate_reservation(
     test_system: SystemCharacteristics,
 ):
   # For TPU, target type includes project number and zone
-  target_type = f'projects/12345/zones/zone/acceleratorTypes/{test_system.reservation_accelerator_type}'
+  target_type = f'projects/12345/zones/zone/acceleratorTypes/{get_reservation_accelerator_type(test_system)}'
   json_output = f"""
   {{
       "aggregateReservation": {{

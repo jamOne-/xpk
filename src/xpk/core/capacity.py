@@ -36,6 +36,7 @@ from .reservation import (
     verify_reservations_exist,
     to_reservation_path,
     get_reservation_cached,
+    get_reservation_accelerator_type,
 )
 
 AUTOPROVISIONING_CONFIG_VALUE = 'AUTOPROVISION'
@@ -436,7 +437,7 @@ def _get_blocks_in_reservation(
 def _calculate_target_accelerator_type(
     link: ReservationLink, system: SystemCharacteristics
 ) -> str:
-  reservation_accelerator_type = system.reservation_accelerator_type
+  reservation_accelerator_type = get_reservation_accelerator_type(system)
   assert reservation_accelerator_type
 
   if system.accelerator_type == AcceleratorType.TPU:
@@ -481,7 +482,7 @@ def _verify_reservation_configuration(
         )
         return False
     elif system.accelerator_type == AcceleratorType.GPU:
-      target_accel = system.reservation_accelerator_type
+      target_accel = get_reservation_accelerator_type(system)
       has_matching_accelerator = any(
           acc.accelerator_type == target_accel
           for acc in reservation.specific_reservation.guest_accelerators

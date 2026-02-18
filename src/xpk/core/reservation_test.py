@@ -36,6 +36,13 @@ from .reservation import (
     AcceleratorResource,
     Reservation,
     get_reservation_cached,
+    get_reservation_accelerator_type,
+)
+from .system_characteristics import (
+    SystemCharacteristics,
+    AcceleratorType,
+    GpuConfig,
+    DockerPlatform,
 )
 
 
@@ -499,3 +506,64 @@ def test_parse_reservation_sub_block_defaults():
   assert res.link.block_name == 'block1'
   assert res.count == 0
   assert res.in_use_count == 0
+
+
+def test_reservation_accelerator_type_derived_correctly_for_tpu():
+  tpu_system = SystemCharacteristics(
+      topology='2x2x1',
+      vms_per_slice=1,
+      gke_accelerator='tpu-v5p-slice',
+      gce_machine_type='ct5p-hightpu-4t',
+      chips_per_vm=4,
+      accelerator_type=AcceleratorType.TPU,
+      device_type='v5p-8',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+  )
+
+  reservation_accelerator_type = get_reservation_accelerator_type(tpu_system)
+
+  assert reservation_accelerator_type == 'ct5p'
+
+
+def test_reservation_accelerator_type_derived_correctly_for_gpu():
+  gpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='nvidia-l4',
+      gce_machine_type='g2-standard-12',
+      chips_per_vm=1,
+      accelerator_type=AcceleratorType.GPU,
+      device_type='l4-1',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+      gpu_config=GpuConfig(requires_topology=False),
+  )
+
+  reservation_accelerator_type = get_reservation_accelerator_type(gpu_system)
+
+  assert reservation_accelerator_type == 'nvidia-l4'
+
+
+def test_reservation_accelerator_type_derived_correctly_for_cpu():
+  cpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='N/A',
+      gce_machine_type='n2-standard-32',
+      chips_per_vm=32,
+      accelerator_type=AcceleratorType.CPU,
+      device_type='n2-standard-32-1',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+  )
+
+  reservation_accelerator_type = get_reservation_accelerator_type(cpu_system)
+
+  assert reservation_accelerator_type is None
