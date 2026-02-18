@@ -15,11 +15,8 @@ limitations under the License.
 """
 
 import pytest
-import sys
-from unittest.mock import MagicMock, patch
-
-# Mock google.cloud.resourcemanager_v3 before importing capacity
-sys.modules['google.cloud.resourcemanager_v3'] = MagicMock()
+from typing import Iterator
+from unittest.mock import patch
 
 from .capacity import (
     get_capacity_type,
@@ -34,24 +31,24 @@ from .reservation import (
     get_reservation_cached,
     get_reservation_accelerator_type,
 )
-from xpk.core.testing.commands_tester import CommandsTester
+from .testing.commands_tester import CommandsTester
 from .system_characteristics import SystemCharacteristics, AcceleratorType, DockerPlatform, GpuConfig
 
 
 @pytest.fixture
-def commands_tester(mocker):
+def commands_tester(mocker) -> CommandsTester:
   return CommandsTester(mocker)
 
 
 @pytest.fixture(autouse=True)
-def clear_capacity_cache():
+def clear_capacity_cache() -> Iterator[None]:
   get_reservation_cached.cache_clear()
   yield
   get_reservation_cached.cache_clear()
 
 
 @pytest.fixture
-def test_system():
+def test_system() -> SystemCharacteristics:
   return SystemCharacteristics(
       topology='2x2x1',
       vms_per_slice=1,
