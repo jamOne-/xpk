@@ -18,7 +18,7 @@ import pytest
 import json
 from typing import Iterator, Any
 from unittest.mock import patch
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .capacity import (
     get_capacity_type,
@@ -198,6 +198,7 @@ def test_assess_available_slices_sub_block_healthy(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
+  test_system = replace(test_system, vms_per_slice=2)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -221,7 +222,6 @@ def test_assess_available_slices_sub_block_healthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=2,
       system=test_system,
   )
 
@@ -250,7 +250,6 @@ def test_assess_available_slices_sub_block_unhealthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -261,6 +260,7 @@ def test_assess_available_slices_sub_block_unhealthy(
 def test_assess_available_slices_block_healthy(
     commands_tester: CommandsTester, test_system: SystemCharacteristics
 ):
+  test_system = replace(test_system, vms_per_slice=2)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -286,7 +286,6 @@ def test_assess_available_slices_block_healthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=2,
       system=test_system,
   )
 
@@ -336,7 +335,6 @@ def test_assess_available_slices_block_unhealthy(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -365,7 +363,6 @@ def test_assess_available_slices_reservation_with_sub_block_targeting(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -388,6 +385,7 @@ def test_assess_available_slices_reservation_without_sub_block_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
+  test_system = replace(test_system, vms_per_slice=3)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -400,7 +398,6 @@ def test_assess_available_slices_reservation_without_sub_block_targeting(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=3,
       system=test_system,
   )
 
@@ -429,7 +426,6 @@ def test_assess_available_slices_reservation_without_blocks_sub_block_targeting(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -465,6 +461,7 @@ def test_assess_available_slices_insufficient_hosts(
     test_system: SystemCharacteristics,
     link: ReservationLink | BlockReservationLink | SubBlockReservationLink,
 ):
+  test_system = replace(test_system, vms_per_slice=16)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -483,7 +480,6 @@ def test_assess_available_slices_insufficient_hosts(
   slices, return_code = assess_available_slices(
       [link],
       force_sub_block_targeting=True,
-      required_hosts=16,
       system=test_system,
   )
 
@@ -526,7 +522,6 @@ def test_assess_available_slices_aggregate_reservation(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -563,7 +558,6 @@ def test_assess_available_slices_failures_sub_block_check(
   slices, return_code = assess_available_slices(
       [res_sub],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -594,7 +588,6 @@ def test_assess_available_slices_failures_block_sub_blocks_check(
   slices, return_code = assess_available_slices(
       [res_block],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -620,7 +613,6 @@ def test_assess_available_slices_failures_reservation_blocks_check(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -640,7 +632,6 @@ def test_assess_available_slices_failures_reservation_count_check(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -694,7 +685,6 @@ def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
   slices, return_code = assess_available_slices(
       [block_link, sub_block_link, reservation_link],
       force_sub_block_targeting=True,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -757,7 +747,6 @@ def test_assess_available_slices_tpu_reservation_success(
   capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -779,7 +768,6 @@ def test_assess_available_slices_tpu_reservation_failure(
   capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -822,7 +810,6 @@ def test_assess_available_slices_gpu_reservation_success(
   capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=gpu_system,
   )
 
@@ -865,7 +852,6 @@ def test_assess_available_slices_gpu_reservation_failure(
   capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=gpu_system,
   )
 
@@ -898,7 +884,6 @@ def test_assess_available_slices_aggregate_reservation_failure(
   slices, return_code = assess_available_slices(
       [res],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=test_system,
   )
 
@@ -934,7 +919,6 @@ def test_assess_available_slices_cpu_reservation_success(
   capacity, return_code = assess_available_slices(
       [res_link],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=cpu_system,
   )
 
@@ -970,7 +954,6 @@ def test_assess_available_slices_cpu_reservation_failure(
   capacity, return_code = assess_available_slices(
       [res_link_fail],
       force_sub_block_targeting=False,
-      required_hosts=1,
       system=cpu_system,
   )
 

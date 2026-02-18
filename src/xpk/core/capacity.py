@@ -200,7 +200,6 @@ def get_capacity_node_selectors_from_capacity_type(
 def assess_available_slices(
     reservations: Sequence[ReservationLink],
     force_sub_block_targeting: bool,
-    required_hosts: int,
     system: SystemCharacteristics,
     validate_reservations: bool = True,
 ) -> tuple[list[ReservationCapacity], int]:
@@ -209,7 +208,6 @@ def assess_available_slices(
   Args:
     reservations: list of reservations to assess.
     force_sub_block_targeting: if `True`, then the passed `ReservationLink` or `BlockReservationLink` will be flattened to adequate sub-blocks.
-    required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
     validate_reservations: if `True`, validates the reservation exists and configuration matches.
 
@@ -229,7 +227,7 @@ def assess_available_slices(
         return [], 1
 
     capacities, return_code = _assess_available_slices_for_reservation(
-        reservation, force_sub_block_targeting, required_hosts, system
+        reservation, force_sub_block_targeting, system
     )
     if return_code != 0:
       return [], return_code
@@ -251,7 +249,6 @@ def _assess_available_slices_for_reservation(
         ReservationLink | BlockReservationLink | SubBlockReservationLink
     ),
     force_sub_block_targeting: bool,
-    required_hosts: int,
     system: SystemCharacteristics,
 ) -> tuple[list[ReservationCapacity], int]:
   """Assess the available slices for a single reservation.
@@ -259,7 +256,6 @@ def _assess_available_slices_for_reservation(
   Args:
     reservation: reservation to assess.
     force_sub_block_targeting: if `True`, then the passed `ReservationLink` or `BlockReservationLink` will be flattened to adequate sub-blocks.
-    required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
 
   Returns:
@@ -267,7 +263,7 @@ def _assess_available_slices_for_reservation(
   """
   if isinstance(reservation, SubBlockReservationLink):
     available_slices, return_code = _get_available_slices_in_sub_block(
-        reservation, required_hosts
+        reservation, system.vms_per_slice
     )
     if return_code != 0:
       return [], 1
@@ -279,7 +275,7 @@ def _assess_available_slices_for_reservation(
   if force_sub_block_targeting:
     if isinstance(reservation, BlockReservationLink):
       return _get_healthy_and_fitting_sub_blocks_in_block(
-          reservation, required_hosts
+          reservation, system.vms_per_slice
       )
 
     # reservation instanceof ReservationLink (not Block/SubBlock):
@@ -290,7 +286,6 @@ def _assess_available_slices_for_reservation(
       return assess_available_slices(
           blocks,
           force_sub_block_targeting,
-          required_hosts,
           system,
           validate_reservations=False,
       )
@@ -298,7 +293,7 @@ def _assess_available_slices_for_reservation(
     return [], 0
 
   slices_count, return_code = _get_reservation_slices_count(
-      reservation, required_hosts, system
+      reservation, system
   )
   if return_code != 0:
     return [], return_code
@@ -512,14 +507,12 @@ def _verify_reservation_configuration(
 
 def _get_reservation_slices_count(
     reservation_link: ReservationLink,
-    required_hosts: int,
     system: SystemCharacteristics,
 ) -> tuple[int, int]:
   """Get capacity count of a reservation.
 
   Args:
     reservation: The reservation object.
-    required_hosts: number of hosts required per slice.
     system: The system characteristics of the accelerator type.
 
   Returns:
@@ -531,10 +524,12 @@ def _get_reservation_slices_count(
 
   count = 0
   in_use_count = 0
+  divisor = 1
 
   if reservation.specific_reservation:
     count = int(reservation.specific_reservation.count)
     in_use_count = int(reservation.specific_reservation.in_use_count)
+    divisor = system.vms_per_slice
   elif reservation.aggregate_reservation:
     reserved_resources = reservation.aggregate_reservation.reserved_resources
     target_accelerator_type = _calculate_target_accelerator_type(
@@ -558,9 +553,10 @@ def _get_reservation_slices_count(
         ),
         0,
     )
+    divisor = system.vms_per_slice * system.chips_per_vm
 
   available_hosts = max(0, count - in_use_count)
-  return available_hosts // required_hosts, 0
+  return available_hosts // divisor, 0
 
 
 def _get_dry_run_sub_blocks() -> str:
