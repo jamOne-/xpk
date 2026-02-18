@@ -532,12 +532,11 @@ def _get_reservation_slices_count(
   count = 0
   in_use_count = 0
   divisor = 1
-  required_vms = vms_per_slice
 
   if reservation.specific_reservation:
     count = int(reservation.specific_reservation.count)
     in_use_count = int(reservation.specific_reservation.in_use_count)
-    divisor = required_vms
+    divisor = vms_per_slice
   elif reservation.aggregate_reservation:
     reserved_resources = reservation.aggregate_reservation.reserved_resources
     target_accelerator_type = _calculate_target_accelerator_type(
@@ -561,7 +560,7 @@ def _get_reservation_slices_count(
         ),
         0,
     )
-    divisor = required_vms * system.chips_per_vm
+    divisor = vms_per_slice * system.chips_per_vm
 
   available_hosts = max(0, count - in_use_count)
   return available_hosts // divisor, 0
