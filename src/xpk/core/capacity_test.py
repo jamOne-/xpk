@@ -18,7 +18,7 @@ import pytest
 import json
 from typing import Iterator, Any
 from unittest.mock import patch
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from .capacity import (
     get_capacity_type,
@@ -198,7 +198,6 @@ def test_assess_available_slices_sub_block_healthy(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  test_system = replace(test_system, vms_per_slice=2)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -223,6 +222,7 @@ def test_assess_available_slices_sub_block_healthy(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=2,
   )
 
   assert slices == [ReservationCapacity(res, 2)]
@@ -251,6 +251,7 @@ def test_assess_available_slices_sub_block_unhealthy(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -260,7 +261,6 @@ def test_assess_available_slices_sub_block_unhealthy(
 def test_assess_available_slices_block_healthy(
     commands_tester: CommandsTester, test_system: SystemCharacteristics
 ):
-  test_system = replace(test_system, vms_per_slice=2)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -287,6 +287,7 @@ def test_assess_available_slices_block_healthy(
       [res],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=2,
   )
 
   assert return_code == 0
@@ -336,6 +337,7 @@ def test_assess_available_slices_block_unhealthy(
       [res],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -364,6 +366,7 @@ def test_assess_available_slices_reservation_with_sub_block_targeting(
       [res],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -385,7 +388,6 @@ def test_assess_available_slices_reservation_without_sub_block_targeting(
     commands_tester: CommandsTester,
     test_system: SystemCharacteristics,
 ):
-  test_system = replace(test_system, vms_per_slice=3)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -399,6 +401,7 @@ def test_assess_available_slices_reservation_without_sub_block_targeting(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=3,
   )
 
   assert return_code == 0
@@ -427,6 +430,7 @@ def test_assess_available_slices_reservation_without_blocks_sub_block_targeting(
       [res],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 1
@@ -461,7 +465,6 @@ def test_assess_available_slices_insufficient_hosts(
     test_system: SystemCharacteristics,
     link: ReservationLink | BlockReservationLink | SubBlockReservationLink,
 ):
-  test_system = replace(test_system, vms_per_slice=16)
   setup_mock_reservation(
       commands_tester,
       specific_reservation=SpecificReservation(
@@ -481,6 +484,7 @@ def test_assess_available_slices_insufficient_hosts(
       [link],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=16,
   )
 
   assert not slices
@@ -523,6 +527,7 @@ def test_assess_available_slices_aggregate_reservation(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -559,6 +564,7 @@ def test_assess_available_slices_failures_sub_block_check(
       [res_sub],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -589,6 +595,7 @@ def test_assess_available_slices_failures_block_sub_blocks_check(
       [res_block],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -614,6 +621,7 @@ def test_assess_available_slices_failures_reservation_blocks_check(
       [res],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -633,6 +641,7 @@ def test_assess_available_slices_failures_reservation_count_check(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert not slices
@@ -686,6 +695,7 @@ def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
       [block_link, sub_block_link, reservation_link],
       force_sub_block_targeting=True,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -748,6 +758,7 @@ def test_assess_available_slices_tpu_reservation_success(
       [res_link],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -769,6 +780,7 @@ def test_assess_available_slices_tpu_reservation_failure(
       [res_link_fail],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 1
@@ -811,6 +823,7 @@ def test_assess_available_slices_gpu_reservation_success(
       [res_link],
       force_sub_block_targeting=False,
       system=gpu_system,
+      vms_per_slice=gpu_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -853,10 +866,55 @@ def test_assess_available_slices_gpu_reservation_failure(
       [res_link_fail],
       force_sub_block_targeting=False,
       system=gpu_system,
+      vms_per_slice=gpu_system.vms_per_slice,
   )
 
   assert return_code == 1
   assert not capacity
+
+
+def test_assess_available_slices_gpu_reservation_with_vms_per_slice(
+    commands_tester: CommandsTester,
+):
+  gpu_system = SystemCharacteristics(
+      topology='N/A',
+      vms_per_slice=1,
+      gke_accelerator='nvidia-test',
+      gce_machine_type='g2-standard-12',
+      chips_per_vm=1,
+      accelerator_type=AcceleratorType.GPU,
+      device_type='test-gpu',
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=False,
+      docker_platform=DockerPlatform.AMD,
+      gpu_config=GpuConfig(requires_topology=False),
+  )
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=10,
+          in_use_count=2,
+          machine_type='test-machine',
+          guest_accelerators=[
+              AcceleratorResource(
+                  accelerator_type='nvidia-test', accelerator_count=1
+              )
+          ],
+      ),
+  )
+  res_link = ReservationLink(project='p', name='r', zone='z')
+
+  # Request 2 VMs per slice (e.g. num-nodes=2)
+  capacity, return_code = assess_available_slices(
+      [res_link],
+      force_sub_block_targeting=False,
+      system=gpu_system,
+      vms_per_slice=2,
+  )
+
+  assert return_code == 0
+  assert capacity[0].available_slices == 4
 
 
 @patch('xpk.core.capacity.project_id_to_project_number', return_value='12345')
@@ -885,6 +943,7 @@ def test_assess_available_slices_aggregate_reservation_failure(
       [res],
       force_sub_block_targeting=False,
       system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
   )
 
   assert return_code == 1
@@ -920,6 +979,7 @@ def test_assess_available_slices_cpu_reservation_success(
       [res_link],
       force_sub_block_targeting=False,
       system=cpu_system,
+      vms_per_slice=cpu_system.vms_per_slice,
   )
 
   assert return_code == 0
@@ -955,6 +1015,7 @@ def test_assess_available_slices_cpu_reservation_failure(
       [res_link_fail],
       force_sub_block_targeting=False,
       system=cpu_system,
+      vms_per_slice=cpu_system.vms_per_slice,
   )
 
   assert return_code == 1
