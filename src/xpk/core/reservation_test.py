@@ -30,7 +30,7 @@ from .reservation import (
     SubBlockReservationLink,
     to_reservation_path,
     _parse_reservation,
-    parse_reservation_sub_block,
+    _parse_reservation_sub_block,
     SpecificReservation,
     AggregateReservation,
     AcceleratorResource,
@@ -491,7 +491,7 @@ def test_parse_reservation_sub_block():
       project='project', name='res1', zone='zone', block_name='block1'
   )
 
-  result = parse_reservation_sub_block(data, parent_link)
+  result = _parse_reservation_sub_block(data, parent_link)
 
   assert result == ReservationSubBlock(
       link=SubBlockReservationLink(

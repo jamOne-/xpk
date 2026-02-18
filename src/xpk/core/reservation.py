@@ -15,6 +15,7 @@ limitations under the License.
 """
 
 import json
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
@@ -148,7 +149,7 @@ def _parse_reservation(
   )
 
 
-def parse_reservation_sub_block(
+def _parse_reservation_sub_block(
     data: dict[str, Any], parent_link: BlockReservationLink
 ) -> ReservationSubBlock:
   return ReservationSubBlock(
@@ -414,3 +415,91 @@ def get_reservation_accelerator_type(
   elif system.accelerator_type == AcceleratorType.GPU:
     return system.gke_accelerator
   return None
+
+
+def _get_dry_run_sub_blocks() -> str:
+  """Get dry run sub-blocks based on environment variable."""
+  default_json = '[{"name": "sub0", "count": 16, "inUseCount": 0}]'
+  return os.getenv('DRY_RUN_RESERVATION_SUB_BLOCKS', default_json)
+
+
+def list_healthy_sub_blocks(
+    reservation: BlockReservationLink | SubBlockReservationLink,
+) -> tuple[list[ReservationSubBlock], int]:
+  """List healthy sub-blocks for a reservation block or sub-block.
+
+  Args:
+    reservation: The reservation link (must be Block or SubBlock).
+
+  Returns:
+    A tuple containing a list of healthy sub-blocks and the return code.
+  """
+  if isinstance(reservation, SubBlockReservationLink):
+    filter_arg = (
+        f'name={reservation.sub_block_name} AND healthInfo.healthStatus=HEALTHY'
+    )
+    task_name = f'Check sub-block {reservation.sub_block_name} health'
+  else:
+    filter_arg = 'healthInfo.healthStatus=HEALTHY'
+    task_name = f'Count healthy fitting sub-blocks in {reservation.block_name}'
+
+  command = (
+      f'gcloud beta compute reservations sub-blocks list {reservation.name} '
+      f'--block-name={reservation.block_name} '
+      f'--project={reservation.project} '
+      f'--zone={reservation.zone} '
+      f'--filter="{filter_arg}" '
+      '--format="json(name,count,inUseCount)"'
+  )
+
+  return_code, output = run_command_for_value(
+      command,
+      task_name,
+      dry_run_return_val=_get_dry_run_sub_blocks(),
+  )
+
+  if return_code != 0 or not output.strip():
+    return [], return_code
+
+  try:
+    data = json.loads(output)
+    if not data:
+      return [], 0
+    return [_parse_reservation_sub_block(row, reservation) for row in data], 0
+  except (ValueError, IndexError, AttributeError, json.JSONDecodeError) as e:
+    xpk_print(f'Error processing sub-block data: {e}. Output: "{output}".')
+    return [], 1
+
+
+def get_blocks_in_reservation(
+    reservation: ReservationLink,
+) -> tuple[list[BlockReservationLink], int]:
+  """Get blocks in a reservation."""
+  command = (
+      f'gcloud beta compute reservations blocks list {reservation.name} '
+      f'--project={reservation.project} '
+      f'--zone={reservation.zone} '
+      '--format="value(name)"'
+  )
+  return_code, output = run_command_for_value(
+      command,
+      f'Get blocks in reservation {reservation.name}',
+      dry_run_return_val='block0',
+  )
+  if return_code != 0:
+    xpk_print(
+        f'Get blocks in reservation {reservation.name} failed with'
+        f' {return_code}'
+    )
+    return [], return_code
+
+  return [
+      BlockReservationLink(
+          project=reservation.project,
+          name=reservation.name,
+          zone=reservation.zone,
+          block_name=name,
+      )
+      for name in output.strip().splitlines()
+      if name
+  ], 0

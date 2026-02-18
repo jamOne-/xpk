@@ -15,12 +15,9 @@ limitations under the License.
 """
 
 import enum
-import os
-import json
 from dataclasses import dataclass
 from typing import Sequence
 
-from .commands import run_command_for_value
 from .system_characteristics import AcceleratorType, SystemCharacteristics
 from .gcloud_context import project_id_to_project_number
 from ..utils.console import xpk_print
@@ -31,12 +28,12 @@ from .reservation import (
     BlockReservationLink,
     SubBlockReservationLink,
     Reservation,
-    ReservationSubBlock,
-    parse_reservation_sub_block,
     verify_reservations_exist,
     to_reservation_path,
     get_reservation_cached,
     get_reservation_accelerator_type,
+    list_healthy_sub_blocks,
+    get_blocks_in_reservation,
 )
 
 AUTOPROVISIONING_CONFIG_VALUE = 'AUTOPROVISION'
@@ -283,7 +280,7 @@ def _assess_available_slices_for_reservation(
       )
 
     # reservation instanceof ReservationLink (not Block/SubBlock):
-    blocks, return_code = _get_blocks_in_reservation(reservation)
+    blocks, return_code = get_blocks_in_reservation(reservation)
     if return_code != 0:
       return [], return_code
     if blocks:
@@ -309,60 +306,12 @@ def _assess_available_slices_for_reservation(
   ), 0
 
 
-def _list_healthy_sub_blocks(
-    reservation: BlockReservationLink | SubBlockReservationLink,
-) -> tuple[list[ReservationSubBlock], int]:
-  """List healthy sub-blocks for a reservation block or sub-block.
-
-  Args:
-    reservation: The reservation link (must be Block or SubBlock).
-
-  Returns:
-    A tuple containing a list of healthy sub-blocks and the return code.
-  """
-  if isinstance(reservation, SubBlockReservationLink):
-    filter_arg = (
-        f'name={reservation.sub_block_name} AND healthInfo.healthStatus=HEALTHY'
-    )
-    task_name = f'Check sub-block {reservation.sub_block_name} health'
-  else:
-    filter_arg = 'healthInfo.healthStatus=HEALTHY'
-    task_name = f'Count healthy fitting sub-blocks in {reservation.block_name}'
-
-  command = (
-      f'gcloud beta compute reservations sub-blocks list {reservation.name} '
-      f'--block-name={reservation.block_name} '
-      f'--project={reservation.project} '
-      f'--zone={reservation.zone} '
-      f'--filter="{filter_arg}" '
-      '--format="json(name,count,inUseCount)"'
-  )
-
-  return_code, output = run_command_for_value(
-      command,
-      task_name,
-      dry_run_return_val=_get_dry_run_sub_blocks(),
-  )
-
-  if return_code != 0 or not output.strip():
-    return [], return_code
-
-  try:
-    data = json.loads(output)
-    if not data:
-      return [], 0
-    return [parse_reservation_sub_block(row, reservation) for row in data], 0
-  except (ValueError, IndexError, AttributeError, json.JSONDecodeError) as e:
-    xpk_print(f'Error processing sub-block data: {e}. Output: "{output}".')
-    return [], 1
-
-
 def _get_available_slices_in_sub_block(
     reservation: SubBlockReservationLink,
     required_hosts: int,
 ) -> tuple[int, int]:
   """Check if a sub-block is healthy and return available slices."""
-  sub_blocks, return_code = _list_healthy_sub_blocks(reservation)
+  sub_blocks, return_code = list_healthy_sub_blocks(reservation)
 
   if return_code != 0 or not sub_blocks:
     return 0, return_code
@@ -380,7 +329,7 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
     required_hosts: int,
 ) -> tuple[list[ReservationCapacity], int]:
   """Get healthy and fitting sub-block capacities in a block."""
-  sub_blocks, return_code = _list_healthy_sub_blocks(reservation)
+  sub_blocks, return_code = list_healthy_sub_blocks(reservation)
 
   if return_code != 0:
     return [], return_code
@@ -397,40 +346,6 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
       capacity
       for capacity in available_capacities
       if capacity.available_slices > 0
-  ], 0
-
-
-def _get_blocks_in_reservation(
-    reservation: ReservationLink,
-) -> tuple[list[BlockReservationLink], int]:
-  """Get blocks in a reservation."""
-  command = (
-      f'gcloud beta compute reservations blocks list {reservation.name} '
-      f'--project={reservation.project} '
-      f'--zone={reservation.zone} '
-      '--format="value(name)"'
-  )
-  return_code, output = run_command_for_value(
-      command,
-      f'Get blocks in reservation {reservation.name}',
-      dry_run_return_val='block0',
-  )
-  if return_code != 0:
-    xpk_print(
-        f'Get blocks in reservation {reservation.name} failed with'
-        f' {return_code}'
-    )
-    return [], return_code
-
-  return [
-      BlockReservationLink(
-          project=reservation.project,
-          name=reservation.name,
-          zone=reservation.zone,
-          block_name=name,
-      )
-      for name in output.strip().splitlines()
-      if name
   ], 0
 
 
@@ -564,9 +479,3 @@ def _get_reservation_slices_count(
 
   available_hosts = max(0, count - in_use_count)
   return available_hosts // divisor, 0
-
-
-def _get_dry_run_sub_blocks() -> str:
-  """Get dry run sub-blocks based on environment variable."""
-  default_json = '[{"name": "sub0", "count": 16, "inUseCount": 0}]'
-  return os.getenv('DRY_RUN_RESERVATION_SUB_BLOCKS', default_json)
