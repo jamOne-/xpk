@@ -844,3 +844,208 @@ def test_run_gke_node_pool_create_command_super_slicing_insufficient_capacity(
       "Not enough available reservation capacity"
       in mock_xpk_print.call_args_list[-1].args[0]
   )
+
+
+def test_run_gke_node_pool_create_command_validation_disabled_mismatch(
+    mocker,
+    commands_tester: CommandsTester,
+    mock_xpk_print,
+):
+  """Tests that reservation validation fails if mismatched and flag is disabled."""
+  mocker.patch(
+      "xpk.core.nodepool.get_cluster_location", return_value="us-central1"
+  )
+  mocker.patch("xpk.core.capacity.verify_reservations_exist", return_value=0)
+  mocker.patch(
+      "xpk.core.nodepool.FeatureFlags.RESERVATIONS_VALIDATION_ENABLED", False
+  )
+  args = mocker.Mock(
+      num_slices=3,
+      reservation="reservation1,reservation2",
+      tpu_type="v4-8",
+      device_type=None,
+      cluster="test-cluster",
+      project="test-project",
+      zone="us-central1-a",
+      on_demand=False,
+      spot=False,
+      flex=False,
+      enable_workload_identity=False,
+      enable_gcsfuse_csi_driver=False,
+      host_maintenance_interval="AS_NEEDED",
+      custom_nodepool_arguments="",
+      super_slicing=False,
+      num_nodes=3,
+  )
+  system = SystemCharacteristics(
+      topology="2x2x1",
+      vms_per_slice=2,
+      gke_accelerator="tpu-v4",
+      gce_machine_type="ct4p-hightpu-4t",
+      chips_per_vm=4,
+      accelerator_type=AcceleratorType.TPU,
+      device_type="v4-8",
+      requires_workload_policy=False,
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=True,
+      docker_platform=DockerPlatform.AMD,
+  )
+  commands_tester.set_result_for_command(
+      (0, ""), "gcloud beta container node-pools list"
+  )
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 2, "inUseCount": 0,'
+              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      "gcloud beta compute reservations describe",
+  )
+
+  result = run_gke_node_pool_create_command(args, system, "1.2.3")
+
+  assert result == 1
+  mock_xpk_print.assert_called_with(
+      "Error: Number of reservations (2) must match the number of NEW nodepools"
+      " (3) or be 1."
+  )
+
+
+def test_run_gke_node_pool_create_command_validation_disabled_match(
+    mocker,
+    commands_tester: CommandsTester,
+    mock_xpk_print,
+):
+  """Tests that reservation validation passes if matched and flag is disabled."""
+  mocker.patch(
+      "xpk.core.nodepool.get_cluster_location", return_value="us-central1"
+  )
+  mocker.patch("xpk.core.capacity.verify_reservations_exist", return_value=0)
+  mocker.patch(
+      "xpk.core.nodepool.FeatureFlags.RESERVATIONS_VALIDATION_ENABLED", False
+  )
+  args = mocker.Mock(
+      num_slices=2,
+      reservation="reservation1,reservation2",
+      tpu_type="v4-8",
+      device_type=None,
+      cluster="test-cluster",
+      project="test-project",
+      zone="us-central1-a",
+      on_demand=False,
+      spot=False,
+      flex=False,
+      enable_workload_identity=False,
+      enable_gcsfuse_csi_driver=False,
+      host_maintenance_interval="AS_NEEDED",
+      custom_nodepool_arguments="",
+      super_slicing=False,
+      num_nodes=2,
+  )
+  system = SystemCharacteristics(
+      topology="2x2x1",
+      vms_per_slice=2,
+      gke_accelerator="tpu-v4",
+      gce_machine_type="ct4p-hightpu-4t",
+      chips_per_vm=4,
+      accelerator_type=AcceleratorType.TPU,
+      device_type="v4-8",
+      requires_workload_policy=False,
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=True,
+      docker_platform=DockerPlatform.AMD,
+  )
+  commands_tester.set_result_for_command(
+      (0, ""), "gcloud beta container node-pools list"
+  )
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 2, "inUseCount": 0,'
+              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      "gcloud beta compute reservations describe",
+  )
+
+  result = run_gke_node_pool_create_command(args, system, "1.2.3")
+
+  assert result == 0
+  commands_tester.assert_command_run(
+      "gcloud", "node-pools create", "--tpu-topology=2x2x1", times=2
+  )
+
+
+def test_run_gke_node_pool_create_command_validation_disabled_single_reservation(
+    mocker,
+    commands_tester: CommandsTester,
+    mock_xpk_print,
+):
+  """Tests that reservation validation passes with single reservation and flag is disabled."""
+  mocker.patch(
+      "xpk.core.nodepool.get_cluster_location", return_value="us-central1"
+  )
+  mocker.patch("xpk.core.capacity.verify_reservations_exist", return_value=0)
+  mocker.patch(
+      "xpk.core.nodepool.FeatureFlags.RESERVATIONS_VALIDATION_ENABLED", False
+  )
+  args = mocker.Mock(
+      num_slices=2,
+      reservation="reservation1",
+      tpu_type="v4-8",
+      device_type=None,
+      cluster="test-cluster",
+      project="test-project",
+      zone="us-central1-a",
+      on_demand=False,
+      spot=False,
+      flex=False,
+      enable_workload_identity=False,
+      enable_gcsfuse_csi_driver=False,
+      host_maintenance_interval="AS_NEEDED",
+      custom_nodepool_arguments="",
+      super_slicing=False,
+      num_nodes=2,
+  )
+  system = SystemCharacteristics(
+      topology="2x2x1",
+      vms_per_slice=2,
+      gke_accelerator="tpu-v4",
+      gce_machine_type="ct4p-hightpu-4t",
+      chips_per_vm=4,
+      accelerator_type=AcceleratorType.TPU,
+      device_type="v4-8",
+      requires_workload_policy=False,
+      supports_sub_slicing=False,
+      supports_super_slicing=False,
+      supports_accelerator_network_profile=True,
+      docker_platform=DockerPlatform.AMD,
+  )
+  commands_tester.set_result_for_command(
+      (0, ""), "gcloud beta container node-pools list"
+  )
+  commands_tester.set_result_for_command(
+      (
+          0,
+          (
+              '{"specificReservation": {"count": 2, "inUseCount": 0,'
+              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
+              ' "status": "READY"}'
+          ),
+      ),
+      "gcloud beta compute reservations describe",
+  )
+
+  result = run_gke_node_pool_create_command(args, system, "1.2.3")
+
+  assert result == 0
+  commands_tester.assert_command_run(
+      "gcloud", "node-pools create", "--tpu-topology=2x2x1", times=2
+  )

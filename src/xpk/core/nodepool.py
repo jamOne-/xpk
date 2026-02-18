@@ -15,8 +15,9 @@ limitations under the License.
 """
 
 from typing import Iterator, List
-from itertools import chain, repeat
+from itertools import chain, repeat, cycle
 
+from ..utils.feature_flags import FeatureFlags
 from ..utils.console import ask_for_user_consent, xpk_print
 from .scheduling import get_placement_policy_name, is_placement_policy_supported
 from .capacity import (
@@ -280,20 +281,30 @@ def run_gke_node_pool_create_command(
   reservations_iter: Iterator[ReservationLink] | None = None
   if capacity_type == CapacityType.RESERVATION:
     reservations = get_reservations_list(args)
-    vms_per_pool = (
-        args.num_nodes
-        if system.accelerator_type == AcceleratorType.GPU
-        else system.vms_per_slice
-    )
-    reservations_iter, return_code = _prepare_reservation_iterator(
-        reservations=reservations,
-        num_new_node_pools=len(node_pools_to_create),
-        force_sub_block_targeting=super_slicing,
-        system=system,
-        vms_per_pool=vms_per_pool,
-    )
-    if return_code > 0:
-      return return_code
+    if FeatureFlags.RESERVATIONS_VALIDATION_ENABLED:
+      vms_per_pool = (
+          args.num_nodes
+          if system.accelerator_type == AcceleratorType.GPU
+          else system.vms_per_slice
+      )
+      reservations_iter, return_code = _prepare_reservation_iterator(
+          reservations=reservations,
+          num_new_node_pools=len(node_pools_to_create),
+          force_sub_block_targeting=super_slicing,
+          system=system,
+          vms_per_pool=vms_per_pool,
+      )
+      if return_code > 0:
+        return return_code
+    else:
+      if (
+          _validate_reservation_count(reservations, len(node_pools_to_create))
+          != 0
+      ):
+        return 1
+      reservations_iter = (
+          cycle(reservations) if len(reservations) == 1 else iter(reservations)
+      )
 
   for node_pool_name in node_pools_to_create:
     capacity_args, return_code = get_capacity_arguments_from_capacity_type(
@@ -691,6 +702,19 @@ def ensure_resource_policy_exists(
 
   if return_code != 0:
     raise RuntimeError('Unable to create resource policy')
+
+
+def _validate_reservation_count(
+    reservations: List[ReservationLink], num_node_pools_to_create: int
+) -> int:
+  """Validate that reservation count matches new nodepool count or is 1."""
+  if len(reservations) > 1 and len(reservations) != num_node_pools_to_create:
+    xpk_print(
+        f'Error: Number of reservations ({len(reservations)}) must match'
+        f' the number of NEW nodepools ({num_node_pools_to_create}) or be 1.'
+    )
+    return 1
+  return 0
 
 
 def recreate_nodes_in_existing_node_pools(args) -> int:
