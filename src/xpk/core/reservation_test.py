@@ -37,6 +37,7 @@ from .reservation import (
     Reservation,
     get_reservation_cached,
     get_reservation_accelerator_type,
+    ReservationSubBlock,
 )
 from .system_characteristics import (
     SystemCharacteristics,
@@ -489,23 +490,20 @@ def test_parse_reservation_sub_block():
   parent_link = BlockReservationLink(
       project='project', name='res1', zone='zone', block_name='block1'
   )
-  res = parse_reservation_sub_block(data, parent_link)
-  assert res.link.sub_block_name == 'sub1'
-  assert res.link.block_name == 'block1'
-  assert res.count == 10
-  assert res.in_use_count == 2
 
+  result = parse_reservation_sub_block(data, parent_link)
 
-def test_parse_reservation_sub_block_defaults():
-  data = {}
-  parent_link = BlockReservationLink(
-      project='project', name='res1', zone='zone', block_name='block1'
+  assert result == ReservationSubBlock(
+      link=SubBlockReservationLink(
+          project='project',
+          name='res1',
+          zone='zone',
+          block_name='block1',
+          sub_block_name='sub1',
+      ),
+      count=10,
+      in_use_count=2,
   )
-  res = parse_reservation_sub_block(data, parent_link)
-  assert res.link.sub_block_name == ''
-  assert res.link.block_name == 'block1'
-  assert res.count == 0
-  assert res.in_use_count == 0
 
 
 def test_reservation_accelerator_type_derived_correctly_for_tpu():
