@@ -15,10 +15,8 @@ limitations under the License.
 """
 
 import pytest
-import json
-from typing import Iterator, Any
+from typing import Iterator
 from unittest.mock import patch
-from dataclasses import dataclass, field
 
 from .capacity import (
     get_capacity_type,
@@ -37,6 +35,11 @@ from .reservation import (
     AcceleratorResource,
 )
 from .testing.commands_tester import CommandsTester
+from .testing.mock_reservation import (
+    setup_mock_reservation,
+    MockBlock,
+    MockSubBlock,
+)
 from .system_characteristics import SystemCharacteristics, AcceleratorType, DockerPlatform, GpuConfig
 
 
@@ -69,114 +72,6 @@ def test_system() -> SystemCharacteristics:
   )
 
 
-@dataclass(frozen=True)
-class _MockSubBlock:
-  count: int
-  in_use_count: int
-  name: str = 'sub-block'
-
-  def to_dict(self) -> dict[str, Any]:
-    return {
-        'name': self.name,
-        'count': self.count,
-        'inUseCount': self.in_use_count,
-    }
-
-
-@dataclass(frozen=True)
-class _MockBlock:
-  name: str = 'block'
-  sub_blocks: list[_MockSubBlock] = field(default_factory=list)
-
-
-def _accelerator_resource_to_dict(
-    resource: AcceleratorResource,
-) -> dict[str, Any]:
-  return {
-      'accelerator': {
-          'acceleratorType': resource.accelerator_type,
-          'acceleratorCount': resource.accelerator_count,
-      }
-  }
-
-
-def _aggregate_reservation_to_dict(
-    reservation: AggregateReservation,
-) -> dict[str, Any]:
-  return {
-      'reservedResources': [
-          _accelerator_resource_to_dict(r)
-          for r in reservation.reserved_resources
-      ],
-      'inUseResources': [
-          _accelerator_resource_to_dict(r) for r in reservation.in_use_resources
-      ],
-  }
-
-
-def _specific_reservation_to_dict(
-    reservation: SpecificReservation,
-) -> dict[str, Any]:
-  instance_props: dict[str, Any] = {'machineType': reservation.machine_type}
-  if reservation.guest_accelerators:
-    instance_props['guestAccelerators'] = [
-        {'acceleratorType': acc.accelerator_type}
-        for acc in reservation.guest_accelerators
-    ]
-
-  return {
-      'count': reservation.count,
-      'inUseCount': reservation.in_use_count,
-      'instanceProperties': instance_props,
-  }
-
-
-def setup_mock_reservation(
-    commands_tester: CommandsTester,
-    specific_reservation: SpecificReservation | None = None,
-    aggregate_reservation: AggregateReservation | None = None,
-    status: str = 'READY',
-    blocks: list[_MockBlock] | None = None,
-):
-  if aggregate_reservation:
-    describe_json: dict[str, Any] = {
-        'status': status,
-        'aggregateReservation': _aggregate_reservation_to_dict(
-            aggregate_reservation
-        ),
-    }
-  else:
-    if specific_reservation is None:
-      specific_reservation = SpecificReservation(
-          count=0, in_use_count=0, machine_type='test-machine'
-      )
-    describe_json = {
-        'status': status,
-        'specificReservation': _specific_reservation_to_dict(
-            specific_reservation
-        ),
-    }
-
-  commands_tester.set_result_for_command(
-      (0, json.dumps(describe_json)),
-      'gcloud beta compute reservations describe',
-  )
-
-  if blocks is not None:
-    block_names = [b.name for b in blocks]
-    commands_tester.set_result_for_command(
-        (0, '\n'.join(block_names)),
-        'gcloud beta compute reservations blocks list',
-    )
-
-    for block in blocks:
-      commands_tester.set_result_for_command(
-          (0, json.dumps([sb.to_dict() for sb in block.sub_blocks])),
-          'gcloud beta compute reservations sub-blocks list',
-          f'--block-name={block.name}',
-      )
-
-
 def test_get_capacity_type_multiple_reservations(mocker):
   mocker.patch('xpk.core.capacity.verify_reservations_exist', return_value=0)
   args = mocker.Mock(
@@ -204,9 +99,9 @@ def test_assess_available_slices_sub_block_healthy(
           count=6, in_use_count=1, machine_type='test-machine'
       ),
       blocks=[
-          _MockBlock(
+          MockBlock(
               name='block',
-              sub_blocks=[_MockSubBlock(count=6, in_use_count=1)],
+              sub_blocks=[MockSubBlock(count=6, in_use_count=1)],
           )
       ],
   )
@@ -238,7 +133,7 @@ def test_assess_available_slices_sub_block_unhealthy(
       specific_reservation=SpecificReservation(
           count=48, in_use_count=2, machine_type='test-machine'
       ),
-      blocks=[_MockBlock(name='block', sub_blocks=[])],
+      blocks=[MockBlock(name='block', sub_blocks=[])],
   )
   res = SubBlockReservationLink(
       project='project',
@@ -267,11 +162,11 @@ def test_assess_available_slices_block_healthy(
           count=10, in_use_count=2, machine_type='test-machine'
       ),
       blocks=[
-          _MockBlock(
+          MockBlock(
               name='block',
               sub_blocks=[
-                  _MockSubBlock(name='sub1', count=4, in_use_count=1),
-                  _MockSubBlock(name='sub2', count=6, in_use_count=1),
+                  MockSubBlock(name='sub1', count=4, in_use_count=1),
+                  MockSubBlock(name='sub2', count=6, in_use_count=1),
               ],
           )
       ],
@@ -324,7 +219,7 @@ def test_assess_available_slices_block_unhealthy(
       specific_reservation=SpecificReservation(
           count=48, in_use_count=2, machine_type='test-machine'
       ),
-      blocks=[_MockBlock(name='block', sub_blocks=[])],
+      blocks=[MockBlock(name='block', sub_blocks=[])],
   )
   res = BlockReservationLink(
       project='project',
@@ -354,9 +249,9 @@ def test_assess_available_slices_reservation_with_sub_block_targeting(
           count=48, in_use_count=2, machine_type='test-machine'
       ),
       blocks=[
-          _MockBlock(
+          MockBlock(
               name='block1',
-              sub_blocks=[_MockSubBlock(name='sub1', count=1, in_use_count=0)],
+              sub_blocks=[MockSubBlock(name='sub1', count=1, in_use_count=0)],
           )
       ],
   )
@@ -471,10 +366,10 @@ def test_assess_available_slices_insufficient_hosts(
           count=16, in_use_count=2, machine_type='test-machine'
       ),
       blocks=[
-          _MockBlock(
+          MockBlock(
               name='block',
               sub_blocks=[
-                  _MockSubBlock(name='sub-block', count=16, in_use_count=2)
+                  MockSubBlock(name='sub-block', count=16, in_use_count=2)
               ],
           )
       ],
@@ -658,22 +553,22 @@ def test_assess_available_slices_mixed_reservations_with_subblock_targeting(
           count=48, in_use_count=2, machine_type='test-machine'
       ),
       blocks=[
-          _MockBlock(
+          MockBlock(
               name='block10',
               sub_blocks=[
-                  _MockSubBlock(name='sub11', count=1, in_use_count=0),
-                  _MockSubBlock(name='sub12', count=1, in_use_count=0),
+                  MockSubBlock(name='sub11', count=1, in_use_count=0),
+                  MockSubBlock(name='sub12', count=1, in_use_count=0),
               ],
           ),
-          _MockBlock(
+          MockBlock(
               name='block20',
-              sub_blocks=[_MockSubBlock(name='sub21', count=1, in_use_count=0)],
+              sub_blocks=[MockSubBlock(name='sub21', count=1, in_use_count=0)],
           ),
-          _MockBlock(
+          MockBlock(
               name='block30',
-              sub_blocks=[_MockSubBlock(name='sub31', count=1, in_use_count=0)],
+              sub_blocks=[MockSubBlock(name='sub31', count=1, in_use_count=0)],
           ),
-          _MockBlock(name='block40', sub_blocks=[]),
+          MockBlock(name='block40', sub_blocks=[]),
       ],
   )
 

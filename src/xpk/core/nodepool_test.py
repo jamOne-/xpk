@@ -25,6 +25,12 @@ from xpk.core.nodepool import (
 from xpk.core.system_characteristics import AcceleratorType, SystemCharacteristics, DockerPlatform, GpuConfig
 from xpk.core.commands import FailedCommand
 from xpk.core.testing.commands_tester import CommandsTester
+from xpk.core.testing.mock_reservation import (
+    setup_mock_reservation,
+    MockBlock,
+    MockSubBlock,
+)
+from xpk.core.reservation import SpecificReservation
 
 
 CLUSTER_NAME = "running-cucumber"
@@ -476,16 +482,11 @@ def test_run_gke_node_pool_create_command_multiple_reservations(
   commands_tester.set_result_for_command(
       (0, ""), "gcloud beta container node-pools list"
   )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 2, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=2, in_use_count=0, machine_type="ct4p-hightpu-4t"
       ),
-      "gcloud beta compute reservations describe",
   )
   result = run_gke_node_pool_create_command(args, system, "1.2.3")
 
@@ -556,16 +557,11 @@ def test_run_gke_node_pool_create_command_partial_reservations(
       "node-pools describe",
       '--format="value(locations)"',
   )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 2, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
-              ' "status": "READY"}'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=2, in_use_count=0, machine_type="ct4p-hightpu-4t"
       ),
-      "gcloud beta compute reservations describe",
   )
   result = run_gke_node_pool_create_command(args, system, "1.2.3")
 
@@ -730,31 +726,21 @@ def test_run_gke_node_pool_create_command_super_slicing_exhaustion(
       supports_accelerator_network_profile=True,
       docker_platform=DockerPlatform.AMD,
   )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '[{"name": "sub-block1", "count": 2, "inUseCount": 0}, {"name":'
-              ' "sub-block2", "count": 2, "inUseCount": 0}]'
-          ),
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=100, in_use_count=0, machine_type="ct4p-hightpu-4t"
       ),
-      "gcloud beta compute reservations sub-blocks list",
+      blocks=[
+          MockBlock(
+              name="block1",
+              sub_blocks=[
+                  MockSubBlock(name="sub-block1", count=2, in_use_count=0),
+                  MockSubBlock(name="sub-block2", count=2, in_use_count=0),
+              ],
+          )
+      ],
   )
-  commands_tester.set_result_for_command(
-      (0, "block1"), "gcloud beta compute reservations blocks list"
-  )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 100, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
-              ' "status": "READY"}'
-          ),
-      ),
-      "gcloud beta compute reservations describe",
-  )
-
   result = run_gke_node_pool_create_command(args, system, "1.2.3")
 
   assert result == 0
@@ -814,28 +800,20 @@ def test_run_gke_node_pool_create_command_super_slicing_insufficient_capacity(
       supports_accelerator_network_profile=True,
       docker_platform=DockerPlatform.AMD,
   )
-  commands_tester.set_result_for_command(
-      (0, "block1"), "gcloud beta compute reservations blocks list"
-  )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          '[{"name": "sub-block1", "count": 2, "inUseCount": 0}]',
+  setup_mock_reservation(
+      commands_tester,
+      specific_reservation=SpecificReservation(
+          count=100, in_use_count=0, machine_type="ct4p-hightpu-4t"
       ),
-      "gcloud beta compute reservations sub-blocks list",
+      blocks=[
+          MockBlock(
+              name="block1",
+              sub_blocks=[
+                  MockSubBlock(name="sub-block1", count=2, in_use_count=0),
+              ],
+          )
+      ],
   )
-  commands_tester.set_result_for_command(
-      (
-          0,
-          (
-              '{"specificReservation": {"count": 100, "inUseCount": 0,'
-              ' "instanceProperties": {"machineType": "ct4p-hightpu-4t"}},'
-              ' "status": "READY"}'
-          ),
-      ),
-      "gcloud beta compute reservations describe",
-  )
-
   result = run_gke_node_pool_create_command(args, system, "1.2.3")
 
   assert result == 1
