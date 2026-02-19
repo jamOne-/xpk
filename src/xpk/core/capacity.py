@@ -34,6 +34,7 @@ from .reservation import (
     get_reservation_accelerator_type,
     list_healthy_sub_blocks,
     get_blocks_in_reservation,
+    AcceleratorResource,
 )
 
 AUTOPROVISIONING_CONFIG_VALUE = 'AUTOPROVISION'
@@ -349,20 +350,51 @@ def _get_healthy_and_fitting_sub_blocks_in_block(
   ], 0
 
 
-def _calculate_target_accelerator_type(
-    link: ReservationLink, system: SystemCharacteristics
-) -> str:
+def _find_matching_accelerator_resource(
+    reservation: Reservation, system: SystemCharacteristics
+) -> AcceleratorResource | None:
+  """Finds the matching accelerator resource in an aggregate reservation.
+
+  Args:
+    reservation: The reservation object.
+    system: The system characteristics.
+
+  Returns:
+    The matching AcceleratorResource or None if not found.
+  """
   reservation_accelerator_type = get_reservation_accelerator_type(system)
   assert reservation_accelerator_type
 
+  if not reservation.aggregate_reservation:
+    return None
+
+  reserved_resources = reservation.aggregate_reservation.reserved_resources
+
   if system.accelerator_type == AcceleratorType.TPU:
-    project_number = project_id_to_project_number(link.project)
-    return (
-        f'projects/{project_number}/zones/{link.zone}/acceleratorTypes/'
-        f'{reservation_accelerator_type}'
+    # Try with Project ID:
+    target_type_id = (
+        f'projects/{reservation.link.project}/zones/{reservation.link.zone}/'
+        f'acceleratorTypes/{reservation_accelerator_type}'
     )
+    for r in reserved_resources:
+      if r.accelerator_type == target_type_id:
+        return r
+
+    # Try with Project Number:
+    project_number = project_id_to_project_number(reservation.link.project)
+    target_type_number = (
+        f'projects/{project_number}/zones/{reservation.link.zone}/'
+        f'acceleratorTypes/{reservation_accelerator_type}'
+    )
+    for r in reserved_resources:
+      if r.accelerator_type == target_type_number:
+        return r
   else:
-    return reservation_accelerator_type
+    for r in reserved_resources:
+      if r.accelerator_type == reservation_accelerator_type:
+        return r
+
+  return None
 
 
 def _verify_reservation_configuration(
@@ -409,17 +441,12 @@ def _verify_reservation_configuration(
         )
         return False
   elif reservation.aggregate_reservation:
-    target_accelerator_type = _calculate_target_accelerator_type(
-        reservation.link, system
-    )
-    has_matching_accelerator = any(
-        res.accelerator_type == target_accelerator_type
-        for res in reservation.aggregate_reservation.reserved_resources
-    )
-    if not has_matching_accelerator:
+    matching_resource = _find_matching_accelerator_resource(reservation, system)
+    if not matching_resource:
       xpk_print(
           f"ERROR: Aggregate Reservation '{reservation.link.name}' does not"
-          f" have a matching accelerator for '{target_accelerator_type}'."
+          ' have a matching accelerator for'
+          f" '{get_reservation_accelerator_type(system)}'."
       )
       return False
   return True
@@ -453,25 +480,15 @@ def _get_reservation_slices_count(
     in_use_count = int(reservation.specific_reservation.in_use_count)
     divisor = vms_per_slice
   elif reservation.aggregate_reservation:
-    reserved_resources = reservation.aggregate_reservation.reserved_resources
-    target_accelerator_type = _calculate_target_accelerator_type(
-        reservation.link, system
-    )
-    count = next(
-        (
-            r.accelerator_count
-            for r in reserved_resources
-            if r.accelerator_type == target_accelerator_type
-        ),
-        0,
-    )
-
+    matching_resource = _find_matching_accelerator_resource(reservation, system)
+    assert matching_resource
+    count = matching_resource.accelerator_count
     in_use_resources = reservation.aggregate_reservation.in_use_resources
     in_use_count = next(
         (
             r.accelerator_count
             for r in in_use_resources
-            if r.accelerator_type == target_accelerator_type
+            if r.accelerator_type == matching_resource.accelerator_type
         ),
         0,
     )

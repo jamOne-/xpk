@@ -915,3 +915,50 @@ def test_assess_available_slices_cpu_reservation_failure(
 
   assert return_code == 1
   assert not capacity
+
+
+@patch('xpk.core.capacity.project_id_to_project_number')
+def test_assess_available_slices_aggregate_reservation_with_project_id(
+    mock_project_id,
+    commands_tester: CommandsTester,
+    test_system: SystemCharacteristics,
+):
+  # Set the side_effect to raise an exception if called.
+  # This ensures that the code does NOT try to resolve project number if it finds a match with project ID.
+  mock_project_id.side_effect = Exception('Should not be called')
+
+  project_id = 'my-project'
+  zone = 'my-zone'
+  accel_suffix = get_reservation_accelerator_type(test_system)
+  target_type_with_id = (
+      f'projects/{project_id}/zones/{zone}/acceleratorTypes/{accel_suffix}'
+  )
+
+  aggregate_payload = AggregateReservation(
+      reserved_resources=[
+          AcceleratorResource(
+              accelerator_type=target_type_with_id, accelerator_count=100
+          )
+      ],
+      in_use_resources=[],
+  )
+  setup_mock_reservation(
+      commands_tester,
+      aggregate_reservation=aggregate_payload,
+  )
+  res = ReservationLink(project=project_id, name='reservation', zone=zone)
+
+  slices, return_code = assess_available_slices(
+      [res],
+      force_sub_block_targeting=False,
+      system=test_system,
+      vms_per_slice=test_system.vms_per_slice,
+  )
+
+  assert return_code == 0
+  assert slices == [
+      ReservationCapacity(
+          res,
+          available_slices=100,
+      )
+  ]
