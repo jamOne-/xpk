@@ -166,7 +166,7 @@ def _parse_reservation_sub_block(
 
 
 @lru_cache()
-def get_reservation_cached(
+def _get_reservation_cached(
     reservation: ReservationLink,
 ) -> Reservation | None:
   """Fetches reservation details using gcloud and returns Reservation object.
@@ -211,6 +211,29 @@ def get_reservation_cached(
     return None
 
 
+def get_reservation(
+    reservation: ReservationLink,
+) -> Reservation | None:
+  """Fetches reservation details using gcloud and returns Reservation object.
+
+  Args:
+    reservation: ReservationLink object.
+
+  Returns:
+    Reservation object or None on failure.
+  """
+  # Create a base ReservationLink to use as the cache key.
+  # This ensures that different blocks/sub-blocks of the same reservation
+  # map to the same cache entry.
+  base_link = ReservationLink(
+      project=reservation.project,
+      name=reservation.name,
+      zone=reservation.zone,
+  )
+
+  return _get_reservation_cached(base_link)
+
+
 def print_reservations(args) -> int:
   """Print the reservations in the project.
 
@@ -241,7 +264,7 @@ def get_reservation_maintenance_interval(
   Returns:
     Maintenance interval as a string.
   """
-  reservation = get_reservation_cached(reservation_link)
+  reservation = get_reservation(reservation_link)
   if not reservation or not reservation.specific_reservation:
     xpk_print(
         'Get reservation maintenance interval failed for'
@@ -261,7 +284,7 @@ def get_reservation_placement_policy(reservation_link: ReservationLink) -> str:
   Returns:
     Placement policy as a string.
   """
-  reservation = get_reservation_cached(reservation_link)
+  reservation = get_reservation(reservation_link)
   if not reservation:
     xpk_print(
         f'Get reservation placement policy failed for {reservation_link.name}'
@@ -280,7 +303,7 @@ def get_reservation_deployment_type(reservation_link: ReservationLink) -> str:
   Returns:
     Deployment type as a string.
   """
-  reservation = get_reservation_cached(reservation_link)
+  reservation = get_reservation(reservation_link)
   if not reservation:
     xpk_print(
         f'Get reservation deployment type failed for {reservation_link.name}'
@@ -317,7 +340,7 @@ def verify_reservations_exist(args) -> int:
     0 if successful and 1 otherwise.
   """
   for reservation_link in get_reservations_list(args):
-    reservation = get_reservation_cached(reservation_link)
+    reservation = get_reservation(reservation_link)
     if not reservation:
       xpk_print(f'Describe reservation {reservation_link.name} failed')
       xpk_print(

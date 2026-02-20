@@ -28,7 +28,7 @@ from .capacity import (
     ReservationCapacity,
 )
 from .reservation import (
-    get_reservation_cached,
+    _get_reservation_cached,
     get_reservation_accelerator_type,
     SpecificReservation,
     AggregateReservation,
@@ -50,9 +50,9 @@ def commands_tester(mocker) -> CommandsTester:
 
 @pytest.fixture(autouse=True)
 def clear_capacity_cache() -> Iterator[None]:
-  get_reservation_cached.cache_clear()
+  _get_reservation_cached.cache_clear()
   yield
-  get_reservation_cached.cache_clear()
+  _get_reservation_cached.cache_clear()
 
 
 @pytest.fixture

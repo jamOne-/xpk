@@ -30,7 +30,7 @@ from .reservation import (
     Reservation,
     verify_reservations_exist,
     to_reservation_path,
-    get_reservation_cached,
+    get_reservation,
     get_reservation_accelerator_type,
     list_healthy_sub_blocks,
     get_blocks_in_reservation,
@@ -217,7 +217,7 @@ def assess_available_slices(
   reservation_capacities = []
   for reservation in reservations:
     if validate_reservations:
-      parent_reservation = get_reservation_cached(reservation)
+      parent_reservation = get_reservation(reservation)
 
       if not parent_reservation:
         xpk_print(f"ERROR: Failed to fetch reservation '{reservation.name}'.")
@@ -467,7 +467,7 @@ def _get_reservation_slices_count(
   Returns:
     Number of available slots in the reservation.
   """
-  reservation = get_reservation_cached(reservation_link)
+  reservation = get_reservation(reservation_link)
   if not reservation:
     return 0, 1
 
