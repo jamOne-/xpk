@@ -233,7 +233,9 @@ def assess_available_slices(
       return [], return_code
     if not capacities and validate_reservations:
       xpk_print(
-          f'ERROR: Reservation {reservation.name} has no available capacity.'
+          'ERROR: Reservation'
+          f' {to_reservation_path(reservation, reservation.project)} has no'
+          ' available capacity.'
       )
       return [], 1
     reservation_capacities.extend(capacities)
