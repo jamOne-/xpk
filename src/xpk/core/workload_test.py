@@ -61,14 +61,22 @@ def _create_mock_workload_json(data: _MockWorkloadData):
           'ownerReferences': [{'name': data.jobset_name}],
       },
       'spec': {
-          'podSets': [{
-              'count': data.needed,
-              'template': {'spec': {'priorityClassName': data.priority}},
-          }]
+          'podSets': (
+              [{
+                  'count': data.needed,
+                  'template': {'spec': {'priorityClassName': data.priority}},
+              }]
+              if data.needed != ''
+              else []
+          )
       },
       'status': {
-          'admission': {'podSetAssignments': [{'count': data.running}]},
-          'reclaimablePods': [{'count': data.done}],
+          'admission': {
+              'podSetAssignments': (
+                  [{'count': data.running}] if data.running != '' else []
+              )
+          },
+          'reclaimablePods': [{'count': data.done}] if data.done != '' else [],
           'conditions': [{
               'type': data.status,
               'message': data.message,
@@ -193,6 +201,56 @@ def test_get_workload_list_filter_by_job(commands_tester: CommandsTester):
   assert len(parsed_table) == 2
   assert parsed_table[0]['Jobset Name'] == 'job-test-1'
   assert parsed_table[1]['Jobset Name'] == 'job-test-2'
+
+
+def test_get_workload_list_wildcard(commands_tester: CommandsTester):
+  mock_output = json.dumps({
+      'items': [{
+          'metadata': {
+              'creationTimestamp': '2024-01-01T00:00:00Z',
+              'ownerReferences': [{'name': 'multi-podset-job'}],
+          },
+          'spec': {
+              'podSets': [
+                  {
+                      'count': 16,
+                      'template': {'spec': {'priorityClassName': 'high'}},
+                  },
+                  {
+                      'count': 32,
+                      'template': {'spec': {'priorityClassName': 'high'}},
+                  },
+              ]
+          },
+          'status': {
+              'admission': {
+                  'podSetAssignments': [{'count': 16}, {'count': 32}]
+              },
+              'reclaimablePods': [{'count': 16}, {'count': 32}],
+              'conditions': [{
+                  'type': 'Running',
+                  'message': 'All good',
+                  'lastTransitionTime': '2024-01-01T00:01:00Z',
+              }],
+          },
+      }]
+  })
+  commands_tester.set_result_for_command(
+      (0, mock_output), 'kubectl', 'get', 'workloads'
+  )
+  args = MagicMock()
+  args.filter_by_status = 'EVERYTHING'
+  args.filter_by_job = None
+
+  return_code, return_value = get_workload_list(args)
+
+  assert return_code == 0
+  parsed_table = _parse_workload_table(return_value)
+  assert len(parsed_table) == 1
+  assert parsed_table[0]['Jobset Name'] == 'multi-podset-job'
+  assert parsed_table[0]['TPU VMs Needed'] == '48'
+  assert parsed_table[0]['TPU VMs Running/Ran'] == '48'
+  assert parsed_table[0]['TPU VMs Done'] == '48'
 
 
 @pytest.mark.parametrize(

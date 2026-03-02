@@ -119,9 +119,8 @@ def _parse_workload_item(item: dict[str, Any]) -> _WorkloadListRow:
       sum(_safe_int(ps.get('count')) for ps in pod_sets) if pod_sets else None
   )
 
-  pod_set_assignments = (
-      item.get('status', {}).get('admission', {}).get('podSetAssignments') or []
-  )
+  admission_status = item.get('status', {}).get('admission', {})
+  pod_set_assignments = admission_status.get('podSetAssignments') or []
   tpu_vms_running_ran = (
       sum(_safe_int(psa.get('count')) for psa in pod_set_assignments)
       if pod_set_assignments
