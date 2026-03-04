@@ -103,9 +103,18 @@ def _parse_workload_item(item: dict[str, Any]) -> _WorkloadListRow:
   jobset_name = owner_refs[0].get('name', '') or None
 
   created_time = item.get('metadata', {}).get('creationTimestamp', '') or None
-  priority = item.get('spec', {}).get('priorityClassName', '') or None
 
   pod_sets = item.get('spec', {}).get('podSets') or []
+  priority = None
+  if pod_sets:
+    priority = (
+        pod_sets[0]
+        .get('template', {})
+        .get('spec', {})
+        .get('priorityClassName', '')
+        or None
+    )
+
   tpu_vms_needed = (
       sum(_safe_int(ps.get('count')) for ps in pod_sets) if pod_sets else None
   )
