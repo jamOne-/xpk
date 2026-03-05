@@ -1149,6 +1149,7 @@ def run_gke_cluster_delete_command(args) -> int:
     # Ignore Column Names line.
     if len(return_value) > 1:
       workloads = [x.split(' ')[0] for x in return_value.splitlines()][1:]
+      workloads = [w for w in workloads if w != '<empty>']
       if workloads and not ask_for_user_consent(
           f'Planning to delete {len(workloads)} workloads in the cluster'
           f' {args.cluster} including {workloads}. \nDo you wish to delete?'
